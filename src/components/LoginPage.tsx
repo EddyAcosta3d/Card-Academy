@@ -50,8 +50,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
           password,
         });
         if (error) throw error;
-        // On successful real login, we default to Student role for now until DB roles are implemented
-        onLogin('Student');
+        let role = 'Student';
+        const cleanUser = username.trim().toLowerCase();
+        if (cleanUser === 'admin') role = 'Admin';
+        else if (cleanUser === 'profesor' || cleanUser === 'maestro') role = 'Teacher';
+        
+        onLogin(role as UserRole);
       }
     } catch (error: any) {
       setErrorMsg(error.message || 'Error occurred');
