@@ -1,0 +1,6 @@
+{
+  "name": "Card Academy",
+  "description": "Plataforma educativa gamificada con roles de Alumno, Profesor y Admin. Incluye desafíos multinivel con quices generados por IA, colección de cartas meme coleccionables, tienda de booster packs y gestión académica completa.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
