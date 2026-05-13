@@ -435,7 +435,7 @@ export default function App() {
 
   // Load from local storage
   useEffect(() => {
-    const saved = localStorage.getItem("educards_stats");
+    const saved = localStorage.getItem("cardacademy_stats");
     if (saved) {
       const parsedStats: UserStats = JSON.parse(saved);
       const today = new Date().toDateString();
@@ -450,16 +450,16 @@ export default function App() {
       setStats(parsedStats);
     }
 
-    const authStatus = localStorage.getItem("educards_is_authenticated");
+    const authStatus = localStorage.getItem("cardacademy_is_authenticated");
     if (authStatus === "true") setIsAuthenticated(true);
 
-    const completed = localStorage.getItem("educards_challenge_completed");
+    const completed = localStorage.getItem("cardacademy_challenge_completed");
     if (completed === new Date().toDateString()) setHasCompletedDaily(true);
   }, []);
 
   // Save to local storage
   useEffect(() => {
-    localStorage.setItem("educards_stats", JSON.stringify(stats));
+    localStorage.setItem("cardacademy_stats", JSON.stringify(stats));
   }, [stats]);
 
   const handleLogin = (role: UserRole) => {
@@ -480,12 +480,12 @@ export default function App() {
             : ["2A"],
     }));
     setIsAuthenticated(true);
-    localStorage.setItem("educards_is_authenticated", "true");
+    localStorage.setItem("cardacademy_is_authenticated", "true");
   };
 
   const handleLogout = () => {
     setIsAuthenticated(false);
-    localStorage.removeItem("educards_is_authenticated");
+    localStorage.removeItem("cardacademy_is_authenticated");
   };
 
   const handleChallengeComplete = (correctResult: boolean) => {
@@ -503,7 +503,7 @@ export default function App() {
       return next;
     });
     localStorage.setItem(
-      "educards_challenge_completed",
+      "cardacademy_challenge_completed",
       new Date().toDateString(),
     );
   };
