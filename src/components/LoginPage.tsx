@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { ShieldCheck, GraduationCap, Users, Zap, Sparkles, Lock, ArrowRight, User } from 'lucide-react';
+import { ShieldCheck, GraduationCap, Users, Zap, Sparkles, Lock, ArrowRight, User, BookOpen } from 'lucide-react';
 import { Logo } from './Logo';
 import { cn } from '../lib/utils';
-import { UserRole } from '../types';
+import { UserRole, Grade } from '../types';
 import { supabase } from '../lib/supabase';
 
 interface LoginPageProps {
-  onLogin: (role: UserRole) => void;
+  onLogin: (role: UserRole, username: string, grade?: Grade) => void;
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
@@ -15,24 +15,56 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+  
+  const [isSignupMode, setIsSignupMode] = useState(false);
+  const [selectedGrade, setSelectedGrade] = useState<Grade>('2A');
 
   // Demo roles
   const handleDemoLogin = (role: UserRole) => {
     setIsLoading(true);
     setTimeout(() => {
-      onLogin(role);
+      onLogin(role, role === 'Admin' ? 'Admin Demo' : role === 'Teacher' ? 'Profe Demo' : 'Alumno Demo', role === 'Student' ? '2A' : undefined);
       setIsLoading(false);
     }, 800);
   };
 
   const handleAuth = async (action: 'signin' | 'signup') => {
+    if (action === 'signup' && !isSignupMode) {
+      setIsSignupMode(true);
+      setErrorMsg('');
+      setSuccessMsg('');
+      return;
+    }
+    if (action === 'signin' && isSignupMode) {
+      setIsSignupMode(false);
+      setErrorMsg('');
+      setSuccessMsg('');
+      return;
+    }
+
     if (!username || !password) {
       setErrorMsg('Por favor ingresa usuario y contraseña');
+      return;
+    }
+
+    const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
+    if (!import.meta.env.VITE_SUPABASE_URL || !supabaseKey) {
+      setErrorMsg('Error de configuración: Faltan las variables de entorno de Supabase (VITE_SUPABASE_URL y VITE_SUPABASE_PUBLISHABLE_KEY). Por favor configúralas en los Secretos.');
+      return;
+    }
+
+    try {
+      const cleanUrl = import.meta.env.VITE_SUPABASE_URL.replace(/\/rest\/v1\/?$/, '');
+      new URL(cleanUrl);
+    } catch {
+      setErrorMsg(`Error de configuración: VITE_SUPABASE_URL es inválida. Debe ser una URL completa como "https://tu-proyecto.supabase.co", pero recibimos: "${import.meta.env.VITE_SUPABASE_URL}".`);
       return;
     }
     
     setIsLoading(true);
     setErrorMsg('');
+    setSuccessMsg('');
 
     const supabaseEmail = `${username.trim().toLowerCase()}@cardacademy.demo.app`;
 
@@ -43,7 +75,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
           password,
         });
         if (error) throw error;
-        setErrorMsg('¡Registro exitoso! Ahora puedes iniciar sesión.');
+        
+        let role = 'Student';
+        const cleanUser = username.trim().toLowerCase();
+        if (cleanUser === 'admin') role = 'Admin';
+        else if (cleanUser === 'profesor' || cleanUser === 'maestro') role = 'Teacher';
+        
+        // Let's sign the user in directly after signup for a better UX
+        onLogin(role as UserRole, username.trim() || 'Nuevo Usuario', role === 'Student' ? selectedGrade : undefined);
+        
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email: supabaseEmail,
@@ -55,7 +95,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
         if (cleanUser === 'admin') role = 'Admin';
         else if (cleanUser === 'profesor' || cleanUser === 'maestro') role = 'Teacher';
         
-        onLogin(role as UserRole);
+        // Right now, when signing in, we don't know their grade unless we fetch it. 
+        // For the sake of this demo without a proper db profile, we'll assign they grade selected
+        onLogin(role as UserRole, username.trim() || 'Nuevo Usuario', role === 'Student' ? selectedGrade : undefined);
       }
     } catch (error: any) {
       setErrorMsg(error.message || 'Error occurred');
@@ -100,16 +142,29 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.3 }}
-          className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-[2rem] p-5 lg:p-8 shadow-2xl relative w-full"
+          className={cn(
+            "backdrop-blur-xl rounded-[2rem] p-5 lg:p-8 shadow-2xl relative w-full transition-all duration-500",
+            isSignupMode 
+              ? "bg-slate-800/80 border border-indigo-500/30 shadow-indigo-500/10" 
+              : "bg-slate-900/50 border border-slate-800"
+          )}
         >
           <div className="relative z-10 space-y-4 lg:space-y-6">
             <div className="text-center">
-              <p className="text-slate-400 text-xs font-black uppercase tracking-[0.2em]">Ingresa a tu cuenta o regístrate</p>
+              <p className="text-slate-400 text-xs font-black uppercase tracking-[0.2em]">
+                {isSignupMode ? 'Crea tu nueva cuenta' : 'Ingresa a tu cuenta'}
+              </p>
             </div>
 
             {errorMsg && (
               <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-3 text-center">
                 <p className="text-[10px] text-rose-400 font-bold uppercase tracking-widest">{errorMsg}</p>
+              </div>
+            )}
+            
+            {successMsg && (
+              <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 text-center">
+                <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest">{successMsg}</p>
               </div>
             )}
 
@@ -136,40 +191,108 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
                 />
               </div>
 
-              <div className="flex flex-col gap-3 pt-2">
-                <button 
-                  type="button"
-                  onClick={() => handleAuth('signin')}
-                  disabled={isLoading}
-                  className={cn(
-                    "w-full py-3 lg:py-4 rounded-[2rem] font-black text-sm lg:text-base uppercase tracking-widest transition-all shadow-2xl flex items-center justify-center gap-3 relative overflow-hidden group",
-                    isLoading ? "bg-slate-800 text-slate-500 border border-slate-700" : "bg-indigo-600 text-white hover:bg-indigo-500 shadow-[0_10px_30px_rgba(79,70,229,0.3)]"
-                  )}
+              {isSignupMode && (
+                <motion.div 
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="relative"
                 >
-                  {isLoading ? (
-                    <div className="flex items-center gap-3">
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      <span className="text-xs">Procesando...</span>
-                    </div>
-                  ) : (
-                    <>
-                      <span>Iniciar Sesión</span>
-                      <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
-                    </>
-                  )}
-                </button>
+                  <BookOpen className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+                  <select
+                    value={selectedGrade}
+                    onChange={(e) => setSelectedGrade(e.target.value as Grade)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-3 lg:py-4 pl-14 pr-6 text-xs font-black uppercase tracking-[0.2em] text-white focus:outline-none focus:border-indigo-500 transition-all appearance-none cursor-pointer"
+                  >
+                    <option value="1A">1ro A</option>
+                    <option value="1B">1ro B</option>
+                    <option value="1C">1ro C</option>
+                    <option value="1D">1ro D</option>
+                    <option value="2A">2do A</option>
+                    <option value="2B">2do B</option>
+                    <option value="2C">2do C</option>
+                    <option value="2D">2do D</option>
+                    <option value="3A">3ro A</option>
+                    <option value="3B">3ro B</option>
+                    <option value="3C">3ro C</option>
+                    <option value="3D">3ro D</option>
+                  </select>
+                  <div className="absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none">
+                     <span className="text-slate-500 text-xs">▼</span>
+                  </div>
+                </motion.div>
+              )}
 
-                <button 
-                  type="button"
-                  onClick={() => handleAuth('signup')}
-                  disabled={isLoading}
-                  className={cn(
-                    "w-full py-3 lg:py-4 rounded-[2rem] font-black text-sm lg:text-base uppercase tracking-widest transition-all flex items-center justify-center gap-3 relative overflow-hidden group",
-                    isLoading ? "bg-slate-900 text-slate-600 border border-slate-800" : "bg-slate-800/50 text-slate-300 hover:bg-slate-700 border border-slate-700"
-                  )}
-                >
-                  <span>Crear Cuenta</span>
-                </button>
+              <div className="flex flex-col gap-3 pt-2">
+                {isSignupMode ? (
+                  <>
+                    <button 
+                      type="button"
+                      onClick={() => handleAuth('signup')}
+                      disabled={isLoading}
+                      className={cn(
+                        "w-full py-3 lg:py-4 rounded-[2rem] font-black text-sm lg:text-base uppercase tracking-widest transition-all flex items-center justify-center gap-3 relative overflow-hidden group shadow-2xl",
+                        isLoading ? "bg-slate-800 text-slate-500 border border-slate-700" : "bg-emerald-600 text-white hover:bg-emerald-500 shadow-[0_10px_30px_rgba(16,185,129,0.3)]"
+                      )}
+                    >
+                      {isLoading ? (
+                        <div className="flex items-center gap-3">
+                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          <span className="text-xs">Creando...</span>
+                        </div>
+                      ) : (
+                        <span>Completar Registro</span>
+                      )}
+                    </button>
+                    
+                    <button 
+                      type="button"
+                      onClick={() => handleAuth('signin')}
+                      disabled={isLoading}
+                      className={cn(
+                        "w-full py-3 lg:py-4 rounded-[2rem] font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-3 relative overflow-hidden group",
+                        "bg-slate-800/50 text-slate-300 hover:bg-slate-700 border border-slate-700"
+                      )}
+                    >
+                      <span>Volver al Login</span>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button 
+                      type="button"
+                      onClick={() => handleAuth('signin')}
+                      disabled={isLoading}
+                      className={cn(
+                        "w-full py-3 lg:py-4 rounded-[2rem] font-black text-sm lg:text-base uppercase tracking-widest transition-all shadow-2xl flex items-center justify-center gap-3 relative overflow-hidden group",
+                        isLoading ? "bg-slate-800 text-slate-500 border border-slate-700" : "bg-indigo-600 text-white hover:bg-indigo-500 shadow-[0_10px_30px_rgba(79,70,229,0.3)]"
+                      )}
+                    >
+                      {isLoading ? (
+                        <div className="flex items-center gap-3">
+                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          <span className="text-xs">Procesando...</span>
+                        </div>
+                      ) : (
+                        <>
+                          <span>Iniciar Sesión</span>
+                          <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                        </>
+                      )}
+                    </button>
+    
+                    <button 
+                      type="button"
+                      onClick={() => handleAuth('signup')}
+                      disabled={isLoading}
+                      className={cn(
+                        "w-full py-3 lg:py-4 rounded-[2rem] font-black text-sm lg:text-base uppercase tracking-widest transition-all flex items-center justify-center gap-3 relative overflow-hidden group",
+                        isLoading ? "bg-slate-900 text-slate-600 border border-slate-800" : "bg-slate-800/50 text-slate-300 hover:bg-slate-700 border border-slate-700"
+                      )}
+                    >
+                      <span>Crear Cuenta</span>
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -202,3 +325,4 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
     </div>
   );
 };
+

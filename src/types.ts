@@ -66,6 +66,8 @@ export interface PackCurrencies {
 export interface UserStats {
   grade: Grade;
   role: UserRole;
+  originalRole?: UserRole; // Track original login role
+  username?: string;
   assignedSubjects: string[]; // Subject IDs (e.g., 'math_1')
   assignedGroups: string[]; // Group names or IDs (e.g., '1ero A')
   tokens: number;

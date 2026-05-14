@@ -36,7 +36,7 @@ import {
   Divide,
   Calculator,
   PenTool,
-  Map,
+  Map as MapIcon,
   Atom,
   MessageSquare,
   Heart,
@@ -93,24 +93,33 @@ import {
   INITIAL_CHALLENGE,
   ACADEMIC_CONTENT,
   SCHOOL_GROUPS,
-  MOCK_STUDENTS,
+  MOCK_STUDENTS as IMPORTED_MOCK_STUDENTS,
   INITIAL_PACKS,
 } from "./constants";
 import { cn } from "./lib/utils";
 import { playCoinSound } from "./lib/sounds";
 
-interface Student {
+export type Student = {
   id: string;
   name: string;
   grade: string;
-  avatar: string;
+  avatar?: string;
   collection: string[];
   completedTasks: string[];
   streak: number;
   tokens: number;
-}
+};
 
-const MOCK_TEACHERS = [
+export type TeacherModel = {
+  id: string;
+  name: string;
+  subjects: string[];
+  groups: string[];
+  students: number;
+  status: string;
+};
+
+const MOCK_TEACHERS: TeacherModel[] = [
   {
     id: "t1",
     name: "Prof. Javier Méndez",
@@ -154,7 +163,7 @@ const SubjectIcon = ({ name, size = 28 }: { name: string; size?: number }) => {
     Calculator: Calculator,
     SquareRoot: Calculator,
     PenTool: PenTool,
-    Map: Map,
+    Map: MapIcon,
     Atom: Atom,
     MessageSquare: MessageSquare,
     Heart: Heart,
@@ -220,27 +229,23 @@ export default function App() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [showChallengeModal, setShowChallengeModal] = useState(false);
   const [selectedTeacherGroup, setSelectedTeacherGroup] = useState<string | null>(null);
-  const [stats, setStats] = useState<UserStats>({
+  const defaultStats: UserStats = {
     grade: "2A",
     role: "Student",
+    originalRole: "Student",
+    username: "Alumno",
     assignedSubjects: ["math_2"],
     assignedGroups: ["2A"],
     tokens: 5000,
     streak: 15,
     collection: [
-      // Collectibles (Stuck to album)
       "coll_A1_01", "coll_A1_03", "coll_A1_05", "coll_A1_07", "coll_A1_12", 
       "coll_A2_02", "coll_A2_04", "coll_A2_06",
       "coll_A3_01", "coll_A3_04", "coll_A3_08",
-      
-      // Achievements (Automatically stuck depending on how it's handled, but we provide them here anyway)
       "achiev_1", "achiev_2", "achiev_3", "achiev_5", "achiev_17",
-      
-      // Rewards
       "reward_1", "reward_3", "reward_4"
     ],
     unstickedCards: [
-      // New cards ready to be stuck
       "coll_A1_02", "coll_A2_01", "coll_A3_02", "achiev_4", "reward_2"
     ],
     completedTasks: [],
@@ -255,12 +260,14 @@ export default function App() {
       pack_culiacan: 1000,
       pack_six_seven: 1000,
     }
-  });
+  };
 
-  const [teachers, setTeachers] = useState(MOCK_TEACHERS);
-  const [selectedStudent, setSelectedStudent] = useState<Student | null>(
-    MOCK_STUDENTS[0],
-  );
+  const [stats, setStats] = useState<UserStats>(defaultStats);
+  const [currentUser, setCurrentUser] = useState<string | null>(null);
+
+  const [teachers, setTeachers] = useState<TeacherModel[]>([]);
+  const [globalStudents, setGlobalStudents] = useState<Student[]>([]);
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [assignmentModal, setAssignmentModal] = useState<{
     teacherId: string | null;
     isOpen: boolean;
@@ -269,11 +276,69 @@ export default function App() {
     activeYear: Year;
   }>({ teacherId: null, isOpen: false, selectedGroups: [], selectedSubjects: [], activeYear: "1" });
 
-  const [adminDashboardTab, setAdminDashboardTab] = useState<"stats" | "teachers">("stats");
+  const [adminDashboardTab, setAdminDashboardTab] = useState<"stats" | "teachers" | "students">("stats");
 
   const [activeTab, setActiveTab] = useState<
     "home" | "collection" | "shop" | "challenges" | "profile"
   >("home");
+
+  // NEW admin state
+  const [allStudents, setAllStudents] = useState<UserStats[]>([]);
+  useEffect(() => {
+    const rawUsers: UserStats[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('cardacademy_stats_')) {
+           try {
+               const stat: UserStats = JSON.parse(localStorage.getItem(key)!);
+               if (stat) rawUsers.push(stat);
+           } catch(e){}
+        }
+    }
+    
+    setAllStudents(rawUsers.filter(u => u.role === 'Student'));
+
+    const computeStudents: Student[] = rawUsers.filter(u => u.role === 'Student').map(s => ({
+        id: s.username || '',
+        name: s.username || 'Alumno',
+        grade: s.grade || '2A',
+        collection: s.collection || [],
+        completedTasks: s.completedTasks || [],
+        streak: s.streak || 0,
+        tokens: s.tokens || 0,
+        avatar: undefined
+    }));
+    setGlobalStudents(computeStudents);
+
+    const computeTeachers: TeacherModel[] = rawUsers.filter(u => u.role === 'Teacher').map(t => ({
+        id: t.username || '',
+        name: t.username || 'Profesor',
+        subjects: t.assignedSubjects || [],
+        groups: t.assignedGroups || [],
+        students: 30,
+        status: 'Active'
+    }));
+
+    const isDemo = currentUser?.toLowerCase().includes('demo') || currentUser?.toLowerCase() === 'admin' || stats?.username?.toLowerCase().includes('demo') || stats?.username?.toLowerCase() === 'admin';
+    if (isDemo) {
+        const teacherMap = new Map();
+        MOCK_TEACHERS.forEach(t => teacherMap.set(t.id, t));
+        computeTeachers.forEach(t => teacherMap.set(t.id, t));
+        setTeachers(Array.from(teacherMap.values()));
+    } else {
+        setTeachers(computeTeachers);
+    }
+  }, [stats.role, stats.username, currentUser, adminDashboardTab]);
+
+  const MOCK_STUDENTS = React.useMemo(() => {
+      const isDemo = currentUser?.toLowerCase().includes('demo') || currentUser?.toLowerCase() === 'admin' || stats?.username?.toLowerCase().includes('demo') || stats?.username?.toLowerCase() === 'admin';
+      const map = new Map<string, Student>();
+      if (isDemo) {
+          IMPORTED_MOCK_STUDENTS.forEach(s => map.set(s.id, s));
+      }
+      globalStudents.forEach(s => map.set(s.id, s));
+      return Array.from(map.values());
+  }, [globalStudents, currentUser, stats.username]);
 
   const [selectedAdminCard, setSelectedAdminCard] = useState<CardType | null>(
     null,
@@ -435,19 +500,23 @@ export default function App() {
 
   // Load from local storage
   useEffect(() => {
-    const saved = localStorage.getItem("cardacademy_stats");
-    if (saved) {
-      const parsedStats: UserStats = JSON.parse(saved);
-      const today = new Date().toDateString();
-      if (!parsedStats.dailyLimits || parsedStats.dailyLimits.lastResetDate !== today) {
-        parsedStats.dailyLimits = {
-          lastResetDate: today,
-          easyCompleted: 0,
-          mediumCompleted: 0,
-          hardCompleted: 0,
-        };
+    const savedUser = localStorage.getItem("cardacademy_current_user");
+    if (savedUser) {
+      setCurrentUser(savedUser);
+      const saved = localStorage.getItem(`cardacademy_stats_${savedUser}`);
+      if (saved) {
+        const parsedStats: UserStats = JSON.parse(saved);
+        const today = new Date().toDateString();
+        if (!parsedStats.dailyLimits || parsedStats.dailyLimits.lastResetDate !== today) {
+          parsedStats.dailyLimits = {
+            lastResetDate: today,
+            easyCompleted: 0,
+            mediumCompleted: 0,
+            hardCompleted: 0,
+          };
+        }
+        setStats(parsedStats);
       }
-      setStats(parsedStats);
     }
 
     const authStatus = localStorage.getItem("cardacademy_is_authenticated");
@@ -459,33 +528,78 @@ export default function App() {
 
   // Save to local storage
   useEffect(() => {
-    localStorage.setItem("cardacademy_stats", JSON.stringify(stats));
-  }, [stats]);
+    if (currentUser) {
+      localStorage.setItem(`cardacademy_stats_${currentUser}`, JSON.stringify(stats));
+    }
+  }, [stats, currentUser]);
 
-  const handleLogin = (role: UserRole) => {
-    setStats((prev) => ({
-      ...prev,
-      role: role,
-      assignedSubjects:
-        role === "Teacher"
-          ? ["tec_2", "art_3"]
-          : role === "Admin"
-            ? []
-            : ["math_2"],
-      assignedGroups:
-        role === "Teacher"
-          ? ["2D", "3A", "3B", "3C", "3D"]
-          : role === "Admin"
-            ? []
-            : ["2A"],
-    }));
+  const handleLogin = (role: UserRole, username: string, grade?: string) => {
+    const freshUser = username || 'Alumno';
+    setCurrentUser(freshUser);
+    localStorage.setItem("cardacademy_current_user", freshUser);
+    
+    const savedStats = localStorage.getItem(`cardacademy_stats_${freshUser}`);
+    if (savedStats) {
+      setStats(JSON.parse(savedStats));
+    } else {
+      const freshStats: UserStats = {
+        ...defaultStats,
+        tokens: 0,
+        streak: 0,
+        collection: [],
+        unstickedCards: [],
+        completedTasks: [],
+        packCurrencies: {
+          pack_jacobo: 0,
+          pack_culiacan: 0,
+          pack_six_seven: 0,
+        }
+      };
+
+      setStats({
+        ...freshStats,
+        role: role,
+        originalRole: role,
+        username: freshUser,
+        grade: (grade as any) || (role === "Student" ? "2A" : "2D"),
+        assignedSubjects:
+          role === "Teacher"
+            ? ["tec_2", "art_3"]
+            : role === "Admin"
+              ? []
+              : ["math_2"],
+        assignedGroups:
+          role === "Teacher"
+            ? ["2D", "3A", "3B", "3C", "3D"]
+            : role === "Admin"
+              ? []
+              : [(grade as any) || "2A"],
+      });
+      
+      // Admin notification for new student
+      if (role === 'Student') {
+        const adminNotif = localStorage.getItem('cardacademy_admin_notifs') || '[]';
+        const notifs = JSON.parse(adminNotif);
+        notifs.push({
+          id: Date.now().toString(),
+          type: 'new_student',
+          student: freshUser,
+          grade: (grade as any) || "2A",
+          date: new Date().toISOString()
+        });
+        localStorage.setItem('cardacademy_admin_notifs', JSON.stringify(notifs));
+      }
+    }
+    
     setIsAuthenticated(true);
     localStorage.setItem("cardacademy_is_authenticated", "true");
   };
 
   const handleLogout = () => {
     setIsAuthenticated(false);
+    setCurrentUser(null);
     localStorage.removeItem("cardacademy_is_authenticated");
+    localStorage.removeItem("cardacademy_current_user");
   };
 
   const handleChallengeComplete = (correctResult: boolean) => {
@@ -858,6 +972,20 @@ export default function App() {
                               </>
                             ) : (
                               <>
+                                {JSON.parse(localStorage.getItem('cardacademy_admin_notifs') || '[]').reverse().map((n: any) => (
+                                  <div key={n.id} className="p-4 border-b border-slate-800/50 hover:bg-slate-800 transition-colors cursor-pointer group relative overflow-hidden">
+                                     <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500" />
+                                     <p className="text-xs text-slate-300 font-medium leading-relaxed">
+                                       <span className="text-emerald-400 font-bold">
+                                         [NUEVO ALUMNO]
+                                       </span>{" "}
+                                       El alumno <strong className="text-white">{n.student}</strong> se ha registrado en el grupo <strong className="text-white">{n.grade}</strong>.
+                                     </p>
+                                     <span className="text-[9px] text-slate-500 font-black uppercase mt-2 block tracking-widest group-hover:text-slate-400 transition-colors">
+                                        Hace un momento
+                                     </span>
+                                  </div>
+                                ))}
                                 <div className="p-4 border-b border-slate-800/50 hover:bg-slate-800 transition-colors cursor-pointer group relative overflow-hidden">
                                   <div className="absolute left-0 top-0 bottom-0 w-1 bg-amber-500" />
                                   <p className="text-xs text-slate-300 font-medium leading-relaxed">
@@ -925,8 +1053,8 @@ export default function App() {
                                 : "from-emerald-400 to-cyan-600",
                           )}
                         >
-                          <div className="w-full h-full flex items-center justify-center text-white font-black text-xs">
-                            {stats.role.charAt(0)}
+                          <div className="w-full h-full flex items-center justify-center text-white font-black text-xs uppercase">
+                            {stats.username ? stats.username.charAt(0) : stats.role.charAt(0)}
                           </div>
                         </div>
                       </div>
@@ -966,7 +1094,7 @@ export default function App() {
                           <div className="p-4 border-b border-slate-800 flex items-center gap-3">
                             <div
                               className={cn(
-                                "shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-white font-black",
+                                "shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-white font-black uppercase",
                                 stats.role === "Admin"
                                   ? "bg-amber-500"
                                   : stats.role === "Teacher"
@@ -974,13 +1102,11 @@ export default function App() {
                                     : "bg-emerald-500",
                               )}
                             >
-                              {stats.role.charAt(0)}
+                              {stats.username ? stats.username.charAt(0) : stats.role.charAt(0)}
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="font-bold text-slate-100 uppercase tracking-tight truncate">
-                                {stats.role === "Teacher"
-                                  ? "Profe. Tecnología y Artes"
-                                  : `Usuario ${stats.role}`}
+                                {stats.username}
                               </p>
                               <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest leading-none mt-1">
                                 ID: #48292-X
@@ -999,60 +1125,62 @@ export default function App() {
                               </span>
                             </button>
 
-                            <div className="py-2 border-t border-slate-800 my-1">
-                              <p className="px-4 text-[8px] font-black text-slate-600 uppercase tracking-[0.2em] mb-2">
-                                Simular Rol (Demo)
-                              </p>
-                              <div className="flex flex-col gap-1">
-                                {(["Student", "Teacher", "Admin"] as const).map(
-                                  (r) => (
-                                    <button
-                                      key={r}
-                                      onClick={() => {
-                                        setStats((prev) => ({
-                                          ...prev,
-                                          role: r,
-                                          assignedSubjects:
-                                            r === "Teacher"
-                                              ? ["tec_2", "art_3"]
-                                              : r === "Admin"
-                                                ? []
-                                                : ["math_2"],
-                                          assignedGroups:
-                                            r === "Teacher"
-                                              ? [
-                                                  "2D",
-                                                  "3A",
-                                                  "3B",
-                                                  "3C",
-                                                  "3D",
-                                                ]
-                                              : r === "Admin"
-                                                ? []
-                                                : ["2A"],
-                                        }));
-                                        setIsProfileOpen(false);
-                                      }}
-                                      className={cn(
-                                        "flex items-center justify-between px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
-                                        stats.role === r
-                                          ? "bg-indigo-500/10 text-indigo-400"
-                                          : "text-slate-500 hover:bg-slate-800 hover:text-slate-300",
-                                      )}
-                                    >
-                                      {r === "Student"
-                                        ? "Alumno"
-                                        : r === "Teacher"
-                                          ? "Profesor"
-                                          : "Admin"}
-                                      {stats.role === r && (
-                                        <CheckCircle2 size={12} />
-                                      )}
-                                    </button>
-                                  ),
-                                )}
+                            {stats.originalRole === "Admin" && (
+                              <div className="py-2 border-t border-slate-800 my-1">
+                                <p className="px-4 text-[8px] font-black text-slate-600 uppercase tracking-[0.2em] mb-2">
+                                  Simular Rol (Demo)
+                                </p>
+                                <div className="flex flex-col gap-1">
+                                  {(["Student", "Teacher", "Admin"] as const).map(
+                                    (r) => (
+                                      <button
+                                        key={r}
+                                        onClick={() => {
+                                          setStats((prev) => ({
+                                            ...prev,
+                                            role: r,
+                                            assignedSubjects:
+                                              r === "Teacher"
+                                                ? ["tec_2", "art_3"]
+                                                : r === "Admin"
+                                                  ? []
+                                                  : ["math_2"],
+                                            assignedGroups:
+                                              r === "Teacher"
+                                                ? [
+                                                    "2D",
+                                                    "3A",
+                                                    "3B",
+                                                    "3C",
+                                                    "3D",
+                                                  ]
+                                                : r === "Admin"
+                                                  ? []
+                                                  : ["2A"],
+                                          }));
+                                          setIsProfileOpen(false);
+                                        }}
+                                        className={cn(
+                                          "flex items-center justify-between px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+                                          stats.role === r
+                                            ? "bg-indigo-500/10 text-indigo-400"
+                                            : "text-slate-500 hover:bg-slate-800 hover:text-slate-300",
+                                        )}
+                                      >
+                                        {r === "Student"
+                                          ? "Alumno"
+                                          : r === "Teacher"
+                                            ? "Profesor"
+                                            : "Admin"}
+                                        {stats.role === r && (
+                                          <CheckCircle2 size={12} />
+                                        )}
+                                      </button>
+                                    ),
+                                  )}
+                                </div>
                               </div>
-                            </div>
+                            )}
 
                             <button
                               onClick={handleLogout}
@@ -1118,7 +1246,15 @@ export default function App() {
                             </p>
                           </div>
                           <div className="flex gap-3 mt-4 md:mt-0">
-                            <button className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-black uppercase tracking-widest text-[9px] md:text-[10px] transition-all flex items-center gap-1.5 border border-slate-700 active:scale-95">
+                            <button 
+                               onClick={() => {
+                                 const newName = window.prompt("Ingresa nuevo nombre de usuario:", stats.username);
+                                 if (newName?.trim()) {
+                                    setStats(s => ({...s, username: newName.trim()}));
+                                    alert("Nombre actualizado exitosamente.");
+                                 }
+                               }}
+                               className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-black uppercase tracking-widest text-[9px] md:text-[10px] transition-all flex items-center gap-1.5 border border-slate-700 active:scale-95">
                               <Settings size={14} /> Config
                             </button>
                           </div>
@@ -1427,7 +1563,7 @@ export default function App() {
 
                         {stats.role === "Admin" && (
                           <div className="flex bg-slate-900/50 backdrop-blur-md p-1.5 rounded-xl border border-slate-800 gap-1 overflow-x-auto no-scrollbar max-w-full">
-                            {(["1A", "2A", "3A"] as Grade[]).map((g) => (
+                            {(["1A", "1B", "1C", "1D", "2A", "2B", "2C", "2D", "3A", "3B", "3C", "3D"] as Grade[]).map((g) => (
                               <button
                                 key={g}
                                 onClick={() => {
@@ -1947,7 +2083,7 @@ export default function App() {
                                    : "text-slate-500 hover:text-slate-300 hover:bg-slate-800/30",
                                )}
                              >
-                               Estadísticas
+                               Estadística
                              </button>
                              <button
                                onClick={() => setAdminDashboardTab("teachers")}
@@ -1958,7 +2094,18 @@ export default function App() {
                                    : "text-slate-500 hover:text-slate-300 hover:bg-slate-800/30",
                                )}
                              >
-                               Plantilla Docente
+                               Docentes
+                             </button>
+                             <button
+                               onClick={() => setAdminDashboardTab("students")}
+                               className={cn(
+                                 "flex-1 md:flex-none px-6 py-3 rounded-lg text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all",
+                                 adminDashboardTab === "students"
+                                   ? "bg-slate-800 text-white shadow-md shadow-black/20"
+                                   : "text-slate-500 hover:text-slate-300 hover:bg-slate-800/30",
+                               )}
+                             >
+                               Alumnos
                              </button>
                           </div>
                         </div>
@@ -2000,7 +2147,7 @@ export default function App() {
                               </div>
                             ))}
                           </div>
-                        ) : (
+                        ) : adminDashboardTab === "teachers" ? (
                           <div className="space-y-6">
                             <div className="flex justify-end">
                               <button className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-2xl text-white font-black uppercase tracking-widest text-[10px] md:text-xs transition-all shadow-lg shadow-indigo-600/20 active:scale-95">
@@ -2084,23 +2231,47 @@ export default function App() {
                                       </span>
                                     </td>
                                     <td className="px-8 py-6 text-right">
-                                      <button
-                                        onClick={() =>
-                                          setAssignmentModal({
-                                            teacherId: teacher.id,
-                                            isOpen: true,
-                                            selectedGroups: teacher.groups || [],
-                                            selectedSubjects: teacher.subjects || [],
-                                            activeYear: "1",
-                                          })
-                                        }
-                                        className="inline-flex items-center justify-end gap-2 px-4 py-2 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-indigo-400 transition-colors border border-transparent hover:border-slate-700"
-                                      >
-                                        <UserCog size={14} />{" "}
-                                        <span className="text-[10px] font-black uppercase tracking-widest">
-                                          Asignar
-                                        </span>
-                                      </button>
+                                      <div className="flex items-center justify-end gap-2">
+                                        <button
+                                          onClick={() => {
+                                            const newName = prompt('Nuevo nombre:', teacher.name);
+                                            if (newName && newName.trim()) {
+                                              setTeachers(prev => prev.map(t => t.id === teacher.id ? {...t, name: newName.trim()} : t));
+                                            }
+                                          }}
+                                          className="text-indigo-400 hover:text-indigo-300 font-bold p-2 bg-indigo-500/10 rounded-full transition-all border border-indigo-500/20"
+                                        >
+                                          <Pencil size={14} />
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            const confirm = window.confirm(`¿Borrar al docente ${teacher.name}?`);
+                                            if (confirm) {
+                                              setTeachers(prev => prev.filter(t => t.id !== teacher.id));
+                                            }
+                                          }}
+                                          className="text-rose-400 hover:text-rose-300 font-bold p-2 bg-rose-500/10 rounded-full transition-all border border-rose-500/20"
+                                        >
+                                          <Trash2 size={14} />
+                                        </button>
+                                        <button
+                                          onClick={() =>
+                                            setAssignmentModal({
+                                              teacherId: teacher.id,
+                                              isOpen: true,
+                                              selectedGroups: teacher.groups || [],
+                                              selectedSubjects: teacher.subjects || [],
+                                              activeYear: "1",
+                                            })
+                                          }
+                                          className="inline-flex items-center justify-end gap-2 px-4 py-2 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-indigo-400 transition-colors border border-transparent hover:border-slate-700"
+                                        >
+                                          <UserCog size={14} />{" "}
+                                          <span className="text-[10px] font-black uppercase tracking-widest hidden lg:inline">
+                                            Asignar
+                                          </span>
+                                        </button>
+                                      </div>
                                     </td>
                                   </tr>
                                 ))}
@@ -2144,7 +2315,29 @@ export default function App() {
                                           </span>
                                         )}
                                 </div>
-                                <div className="flex justify-end pt-2">
+                                <div className="flex justify-end pt-2 border-t border-slate-800/50 mt-2 gap-2">
+                                  <button
+                                    onClick={() => {
+                                      const newName = prompt('Nuevo nombre:', teacher.name);
+                                      if (newName && newName.trim()) {
+                                        setTeachers(prev => prev.map(t => t.id === teacher.id ? {...t, name: newName.trim()} : t));
+                                      }
+                                    }}
+                                    className="p-3 bg-indigo-500/10 text-indigo-400 rounded-xl border border-indigo-500/20"
+                                  >
+                                    <Pencil size={14} />
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      const confirm = window.confirm(`¿Borrar al docente ${teacher.name}?`);
+                                      if (confirm) {
+                                        setTeachers(prev => prev.filter(t => t.id !== teacher.id));
+                                      }
+                                    }}
+                                    className="p-3 bg-rose-500/10 text-rose-400 rounded-xl border border-rose-500/20"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
                                   <button
                                         onClick={() =>
                                           setAssignmentModal({
@@ -2155,7 +2348,7 @@ export default function App() {
                                             activeYear: "1",
                                           })
                                         }
-                                        className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-3 bg-slate-800 rounded-xl text-slate-300 transition-colors border border-slate-700"
+                                        className="flex-1 sm:flex-none w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-3 bg-slate-800 rounded-xl text-slate-300 transition-colors border border-slate-700"
                                       >
                                         <UserCog size={14} />{" "}
                                         <span className="text-[10px] font-black uppercase tracking-widest">
@@ -2167,6 +2360,81 @@ export default function App() {
                             ))}
                           </div>
                         </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-6">
+                            <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] overflow-hidden shadow-xl">
+                               <div className="px-6 md:px-8 py-5 border-b border-slate-800 flex justify-between items-center bg-slate-800/30">
+                                   <h4 className="text-xs font-black uppercase tracking-widest text-white italic">Listado de Alumnos</h4>
+                               </div>
+                               <div className="overflow-x-auto">
+                                   <table className="w-full text-left">
+                                      <thead className="bg-slate-800/50 border-b border-slate-700">
+                                        <tr>
+                                          <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Alumno</th>
+                                          <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Grado/Grupo</th>
+                                          <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Tokens</th>
+                                          <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Acciones</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-800">
+                                          {allStudents.map(student => (
+                                              <tr key={student.username} className="hover:bg-slate-800/30 transition-colors">
+                                                 <td className="px-8 py-6 text-sm font-bold text-slate-200">{student.username}</td>
+                                                 <td className="px-8 py-6 text-sm text-indigo-400 font-bold uppercase">{student.grade}</td>
+                                                 <td className="px-8 py-6 text-sm text-amber-500 font-black flex items-center gap-1.5"><Coins size={14} className="text-amber-500"/> {student.tokens}</td>
+                                                 <td className="px-8 py-6 text-right">
+                                                   <div className="flex items-center justify-end gap-2">
+                                                     <button
+                                                        onClick={() => {
+                                                           const action = prompt(`Editar datos de ${student.username}:\n1. Editar Nombre\n2. Editar Grupo\nIngresa 1 o 2:`);
+                                                           if (action === '1') {
+                                                              const newName = prompt('Nuevo nombre:', student.username);
+                                                              if (newName && newName.trim()) {
+                                                                 const newStats = {...student, username: newName.trim()};
+                                                                 localStorage.setItem('cardacademy_stats_' + student.username, JSON.stringify(newStats));
+                                                                 setAllStudents(prev => prev.map(s => s.username === student.username ? newStats : s));
+                                                              }
+                                                           } else if (action === '2') {
+                                                              const newGrp = prompt('Nuevo grupo (ej. 2A):', student.grade);
+                                                              if (newGrp && newGrp.trim()) {
+                                                                 const newStats = {...student, grade: newGrp.trim() as any};
+                                                                 localStorage.setItem('cardacademy_stats_' + student.username, JSON.stringify(newStats));
+                                                                 setAllStudents(prev => prev.map(s => s.username === student.username ? newStats : s));
+                                                              }
+                                                           }
+                                                        }}
+                                                        className="text-indigo-400 hover:text-indigo-300 font-bold p-2 bg-indigo-500/10 rounded-full transition-all border border-indigo-500/20"
+                                                     >
+                                                        <Pencil size={16} />
+                                                     </button>
+                                                     <button
+                                                        onClick={() => {
+                                                          const confirm = window.confirm(`¿Borrar a ${student.username}?`);
+                                                          if (confirm) {
+                                                             localStorage.removeItem('cardacademy_stats_' + student.username);
+                                                             setAllStudents(prev => prev.filter(s => s.username !== student.username));
+                                                          }
+                                                        }}
+                                                        className="text-rose-400 hover:text-rose-300 font-bold p-2 bg-rose-500/10 rounded-full transition-all border border-rose-500/20"
+                                                     >
+                                                        <Trash2 size={16} />
+                                                     </button>
+                                                   </div>
+                                                 </td>
+                                              </tr>
+                                          ))}
+                                          {allStudents.length === 0 && (
+                                              <tr>
+                                                <td colSpan={4} className="px-8 py-10 text-center text-slate-500 font-bold uppercase tracking-widest text-xs">
+                                                   No hay alumnos registrados aún.
+                                                </td>
+                                              </tr>
+                                          )}
+                                      </tbody>
+                                   </table>
+                               </div>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -2813,7 +3081,7 @@ export default function App() {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -20 }}
-                    className="flex flex-col h-[calc(100dvh-12rem)] md:h-[calc(100dvh-14rem)] justify-center space-y-2 md:space-y-6 text-center"
+                    className="flex flex-col min-h-[calc(100dvh-12rem)] md:min-h-[calc(100dvh-14rem)] pb-20 justify-center space-y-2 md:space-y-6 text-center"
                   >
                     <div className="space-y-0.5 px-4 mb-2 md:mb-6 shrink-0 pt-4 md:pt-0">
                       <h2 className="text-xl md:text-2xl font-black tracking-tighter italic uppercase text-indigo-400">
@@ -2948,7 +3216,7 @@ export default function App() {
                           onPointerMove={handlePointerMove}
                           onPointerUp={handlePointerUpOrLeave}
                           onPointerLeave={handlePointerUpOrLeave}
-                          className={cn("flex overflow-x-auto overflow-y-hidden gap-4 sm:gap-6 md:gap-12 px-[15vw] sm:px-[25vw] md:px-24 pb-4 pt-4 no-scrollbar items-center justify-start min-w-full cursor-grab active:cursor-grabbing select-none h-full sm:h-auto items-stretch sm:items-center", isDraggingPack ? "" : "snap-x snap-mandatory")}
+                          className={cn("flex overflow-x-auto lg:overflow-x-visible gap-4 sm:gap-6 lg:gap-12 px-[15vw] sm:px-[25vw] lg:px-4 py-8 md:py-12 no-scrollbar items-center justify-start lg:justify-center min-w-full cursor-grab lg:cursor-auto active:cursor-grabbing select-none h-auto items-stretch sm:items-center", isDraggingPack ? "" : "snap-x snap-mandatory lg:snap-none")}
                         >
                           {packs
                             .filter((p) => p.active)
@@ -2959,7 +3227,7 @@ export default function App() {
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ delay: idx * 0.1 }}
                                 className={cn(
-                                  "flex-none w-[75vw] sm:w-[45vw] md:w-[340px] max-h-[100%] sm:max-h-none snap-center bg-slate-900 border border-slate-800 rounded-[2rem] md:rounded-[3rem] p-4 sm:p-6 md:p-12 shadow-2xl relative overflow-hidden flex flex-col items-center justify-between gap-3 sm:gap-4 md:gap-10 group transition-all duration-500",
+                                  "flex-none w-[75vw] sm:w-[45vw] md:w-[300px] max-h-[100%] sm:max-h-full snap-center bg-slate-900 border border-slate-800 rounded-[2rem] md:rounded-[2.5rem] p-4 sm:p-6 md:p-8 shadow-2xl relative overflow-hidden flex flex-col items-center justify-between gap-3 sm:gap-4 md:gap-6 group transition-all duration-500",
                                   "hover:scale-[1.02] hover:border-indigo-500 hover:shadow-indigo-500/20 z-10",
                                 )}
                               >
@@ -2970,7 +3238,7 @@ export default function App() {
                                 <div className="relative flex-1 min-h-0 flex flex-col justify-center w-full">
                                   <div
                                     className={cn(
-                                      "w-full h-full min-h-[150px] aspect-[4/5] sm:w-56 sm:h-[320px] sm:aspect-auto rounded-xl mx-auto shadow-[0_25px_50px_rgba(0,0,0,0.7)] flex flex-col items-center justify-center group-hover:scale-[1.02] transition-transform duration-500 relative overflow-hidden bg-slate-800",
+                                      "w-full h-full min-h-[150px] aspect-[4/5] sm:w-48 sm:h-[260px] sm:aspect-auto rounded-xl mx-auto shadow-[0_25px_50px_rgba(0,0,0,0.7)] flex flex-col items-center justify-center group-hover:scale-[1.02] transition-transform duration-500 relative overflow-hidden bg-slate-800",
                                       pack.id === "pack_jacobo"
                                         ? "bg-gradient-to-b from-slate-400 via-slate-600 to-slate-900 border border-slate-400/50"
                                         : pack.id === "pack_culiacan"

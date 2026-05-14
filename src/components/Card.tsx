@@ -111,10 +111,7 @@ export const Card: React.FC<CardProps> = ({ card, onClick, onRedeem, className, 
         )}>
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-from)_0%,_transparent_70%)] from-slate-800/20" />
           <div className="absolute inset-0 opacity-[0.03] mix-blend-overlay pointer-events-none bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]" />
-          <span className="text-8xl font-black text-slate-800 select-none animate-pulse z-10">?</span>
-          <div className="absolute bottom-4 left-4 right-4 h-2 bg-slate-900 rounded-full overflow-hidden border border-white/5 z-10">
-            <div className="h-full bg-slate-800 w-1/3" />
-          </div>
+          <span className="text-7xl font-black text-slate-800 select-none z-10">{card.id.split('_').pop()}</span>
         </div>
       </div>
     );

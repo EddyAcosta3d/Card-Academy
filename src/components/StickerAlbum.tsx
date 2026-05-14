@@ -301,7 +301,6 @@ export const StickerAlbum: React.FC<StickerAlbumProps> = ({
                   >
                     {/* Placeholder space indicating it's an album slot */}
                     <div className="absolute inset-0 bg-slate-950 border-2 border-dashed border-slate-800 rounded-2xl flex flex-col items-center justify-center opacity-50 z-0 overflow-hidden">
-                      <span className="text-slate-700 font-black text-4xl opacity-20 italic">#{idx + 1}</span>
                       <p className="text-[8px] font-bold text-slate-600 tracking-widest uppercase mt-2 px-4 text-center">
                         {card.rarity}
                       </p>
