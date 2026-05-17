@@ -1,31 +1,79 @@
 # Esquema de Base de Datos (Supabase) - Card Academy
 
-Para que la lógica de sobres y fragmentos funcione correctamente, necesitas crear las siguientes tablas y columnas en Supabase. 
+Copia y pega el bloque correspondiente en el **SQL Editor** de tu proyecto Supabase.
 
-## 1. Tabla `users` (Usuarios y Saldos)
-Almacena el inventario de monedas de tus alumnos.
-- `id`: `uuid` (Primary Key, puede enlazarse a `auth.users`)
-- `name`: `text` (Opcional, nombre del alumno)
-- `medallas`: `integer` (Default `0`) -> La moneda que ganan en desafíos.
-- `fragmentos_nexo`: `integer` (Default `0`) -> La moneda pity por cartas repetidas.
+## OPCIÓN A: Si la tabla NO existe (Configuración Inicial)
+Usa esto si estás empezando de cero.
 
-## 2. Tabla `cards` (Catálogo de Cartas)
-Catálogo global con todas las cartas posibles de la academia.
-- `id`: `uuid` o `text` (Primary Key)
-- `name`: `text` (Nombre de la carta)
-- `rarity`: `text` (Las opciones exactas deben ser: `'Común'`, `'Rara'`, `'Épica'`, `'Legendaria'`)
-- `pack_type`: `text` (El sobre al que pertenece: `'pack_jacobo'`, `'pack_culiacan'`, `'pack_6_7'`)
-*(Puedes añadir otras columnas como imagen, descripciones, stats de atk/def, etc.)*
+```sql
+create table users (
+  id uuid references auth.users on delete cascade primary key,
+  username text unique not null,
+  role text check (role in ('Student', 'Teacher', 'Admin')) default 'Student',
+  grade text,
+  tokens integer default 0,
+  streak integer default 0,
+  assigned_subjects text[] default '{}',
+  assigned_groups text[] default '{}',
+  completed_tasks text[] default '{}',
+  pending_tasks text[] default '{}',
+  unsticked_cards text[] default '{}',
+  pack_currencies jsonb default '{"pack_jacobo": 0, "pack_culiacan": 0, "pack_six_seven": 0}'::jsonb,
+  daily_limits jsonb default '{"lastResetDate": "", "easyCompleted": 0, "mediumCompleted": 0, "hardCompleted": 0}'::jsonb,
+  last_active timestamp with time zone default timezone('utc'::text, now()),
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
 
-## 3. Tabla `user_cards` (Inventario/Álbum)
-Registra qué cartas ha obtenido cada alumno de forma única (muchos-a-muchos).
-- `user_id`: `uuid` (Foreign Key refiriendo a `users.id`)
-- `card_id`: `uuid` o `text` (Foreign Key refiriendo a `cards.id`)
-**Nota de seguridad**: Esta tabla debe tener una *Primary Key compuesta* de `(user_id, card_id)` o un constraint `UNIQUE(user_id, card_id)`. De este modo la BD jamás permitirá tener registros duplicados de manera accidental. 
+create table user_cards (
+  user_id uuid references users(id) on delete cascade,
+  card_id text not null,
+  obtained_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  primary key (user_id, card_id)
+);
+
+-- Políticas de Seguridad (RLS)
+alter table users enable row level security;
+create policy "Cualquiera puede ver perfiles" on users for select using (true);
+create policy "Los usuarios pueden insertar su propio perfil" on users for insert with check (auth.uid() = id);
+create policy "Los usuarios pueden actualizar su propio perfil" on users for update using (auth.uid() = id);
+create policy "Los admins pueden gestionar TODO" on users for all using (
+  (auth.jwt() -> 'user_metadata' ->> 'role') = 'Admin'
+);
+
+alter table user_cards enable row level security;
+create policy "Ver inventarios" on user_cards for select using (true);
+create policy "Obtener cartas" on user_cards for insert with check (auth.uid() = user_id);
+create policy "Borrar cartas (intercambios)" on user_cards for delete using (auth.uid() = user_id);
+create policy "Admins gestionan cartas" on user_cards for all using (
+  (auth.jwt() -> 'user_metadata' ->> 'role') = 'Admin'
+);
+```
+
+## OPCIÓN B: Si la tabla YA existe (Reparar / Actualizar)
+Usa esto si ves errores de "column does not exist". **Este es el que probablemente necesitas ahora.**
+
+```sql
+-- Añadir columnas faltantes a la tabla users
+alter table users add column if not exists username text;
+alter table users add column if not exists role text default 'Student';
+alter table users add column if not exists grade text;
+alter table users add column if not exists tokens integer default 0;
+alter table users add column if not exists streak integer default 0;
+alter table users add column if not exists assigned_subjects text[] default '{}';
+alter table users add column if not exists assigned_groups text[] default '{}';
+alter table users add column if not exists completed_tasks text[] default '{}';
+alter table users add column if not exists pending_tasks text[] default '{}';
+alter table users add column if not exists unsticked_cards text[] default '{}';
+alter table users add column if not exists pack_currencies jsonb default '{"pack_jacobo": 0, "pack_culiacan": 0, "pack_six_seven": 0}'::jsonb;
+alter table users add column if not exists daily_limits jsonb default '{"lastResetDate": "", "easyCompleted": 0, "mediumCompleted": 0, "hardCompleted": 0}'::jsonb;
+alter table users add column if not exists last_active timestamp with time zone default timezone('utc'::text, now());
+
+-- Asegurar que username sea único si no lo es
+-- alter table users add constraint users_username_key unique (username);
+```
 
 ---
 
-### Recomendación de Senior: Transacciones SQL (RPC)
-El código en JavaScript proporcionado funciona muy bien y sirve perfectamente como lógica de negocio. Sin embargo, al hacerse en múltiples pasos asíncronos en el cliente o servidor Node de manera desconectada (ej. descontar medallas primero y luego dar las cartas), podría haber problemas si el usuario cierra la conexión en medio del proceso (se le cobran medallas pero no recibe la carta). 
-
-En el futuro, para el proyecto final, te recomiendo mover esta lógica a una [**Postgres Function en Supabase (RPC)**](https://supabase.com/docs/guides/database/functions) para que Todo ocurra en 1 solo paso atómico en la base de datos (se aplica todo a la vez, o falla sin cobrar nada).
+### Notas importantes:
+1. **assigned_groups**: Es vital que esta columna sea de tipo `text[]` (array de texto).
+2. **username**: Si ya tienes datos, asegúrate de que cada usuario tenga un valor en `username` antes de intentar habitilitarlo como `unique`.

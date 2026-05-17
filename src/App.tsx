@@ -16,6 +16,8 @@ import {
   Library,
   ShoppingBag,
   Bell,
+  Eye,
+  EyeOff,
   User as UserIcon,
   ChevronRight,
   GraduationCap,
@@ -65,11 +67,14 @@ import {
   Trash2,
   LogOut,
   UserCog,
+  UserPlus,
   ChevronDown,
   Camera,
   Brain,
   History,
   Repeat,
+  Check,
+  Key,
 } from "lucide-react";
 
 import { GoogleGenAI, Type } from "@google/genai";
@@ -93,11 +98,13 @@ import {
   INITIAL_CHALLENGE,
   ACADEMIC_CONTENT,
   SCHOOL_GROUPS,
-  MOCK_STUDENTS as IMPORTED_MOCK_STUDENTS,
   INITIAL_PACKS,
 } from "./constants";
 import { cn } from "./lib/utils";
 import { playCoinSound } from "./lib/sounds";
+import { Toaster, toast } from "sonner";
+import { supabase } from "./lib/supabase";
+import { supabaseService } from "./lib/supabaseService";
 
 export type Student = {
   id: string;
@@ -106,8 +113,10 @@ export type Student = {
   avatar?: string;
   collection: string[];
   completedTasks: string[];
+  pendingTasks?: string[];
   streak: number;
   tokens: number;
+  lastActive?: string;
 };
 
 export type TeacherModel = {
@@ -117,34 +126,10 @@ export type TeacherModel = {
   groups: string[];
   students: number;
   status: string;
+  lastActive?: string;
 };
 
-const MOCK_TEACHERS: TeacherModel[] = [
-  {
-    id: "t1",
-    name: "Prof. Javier Méndez",
-    subjects: ["math_2"],
-    groups: ["2A", "2B"],
-    students: 45,
-    status: "Active",
-  },
-  {
-    id: "t2",
-    name: "Dra. Elena Rossi",
-    subjects: ["span_2"],
-    groups: ["2C"],
-    students: 38,
-    status: "Active",
-  },
-  {
-    id: "t3",
-    name: "Alquimista Maestro",
-    subjects: [],
-    groups: [],
-    students: 0,
-    status: "On Leave",
-  },
-];
+const MOCK_TEACHERS: TeacherModel[] = [];
 
 const SubjectIcon = ({ name, size = 28 }: { name: string; size?: number }) => {
   const icons: Record<string, any> = {
@@ -213,7 +198,7 @@ const AnimatedTokens = ({ tokens, className }: { tokens: number; className?: str
             animate={{ opacity: 1, y: 15, scale: 1.2 }}
             exit={{ opacity: 0, scale: 0.8 }}
             transition={{ duration: 1.5, ease: "easeOut" }}
-            className="absolute top-1/2 left-1/2 -translate-x-1/2 pointer-events-none text-emerald-400 font-black text-xs sm:text-sm drop-shadow-[0_0_10px_rgba(52,211,153,0.8)] z-50 flex items-center justify-center whitespace-nowrap"
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 pointer-events-none text-emerald-400 font-black text-xs sm:text-sm  z-50 flex items-center justify-center whitespace-nowrap"
           >
             +{anim.diff} <Coins size={10} className="ml-0.5" />
           </motion.div>
@@ -221,6 +206,56 @@ const AnimatedTokens = ({ tokens, className }: { tokens: number; className?: str
       </AnimatePresence>
     </div>
   );
+};
+
+const renderCompactSubjects = (assigned: string[]) => {
+  if (!assigned || assigned.length === 0) return (
+    <span className="text-[9px] font-black text-slate-600 uppercase italic">
+      Sin asignar
+    </span>
+  );
+
+  // Group by base subject ID
+  const groupsBySubject = new Map<string, Set<string>>();
+  
+  assigned.forEach(sid => {
+    const parts = sid.includes(':') ? sid.split(':') : [sid];
+    const subId = parts[0];
+    const groupId = parts.slice(1).join(':');
+    
+    if (!groupsBySubject.has(subId)) groupsBySubject.set(subId, new Set());
+    if (groupId) groupsBySubject.get(subId)!.add(groupId);
+  });
+
+  return Array.from(groupsBySubject.entries()).map(([sid, groups]) => {
+    let prettyName = sid.replace('_', ' ').toUpperCase();
+    let year = sid.split('_')[1] || '';
+    
+    for (const y in ACADEMIC_CONTENT) {
+      const sub = (ACADEMIC_CONTENT[y as Year] || []).find(s => s.id === sid);
+      if (sub) {
+        prettyName = sub.name;
+        year = y;
+        break;
+      }
+    }
+
+    // Identificación especial para Integración Curricular
+    if (prettyName.toLowerCase().includes('integración') || prettyName.toLowerCase().includes('int.')) {
+        prettyName = 'INT';
+    } else if (prettyName.toLowerCase().includes('tecnología')) {
+        prettyName = 'TEC';
+    }
+
+    const groupList = Array.from(groups).sort().join(',');
+    const groupLabel = groupList ? ` (${groupList})` : '';
+
+    return (
+      <div key={sid} className="px-2 py-0.5 bg-cyan-900/40 border border-cyan-500/40 text-cyan-200 rounded text-[9px] font-black uppercase whitespace-nowrap shadow-sm">
+        {prettyName}{groupLabel}
+      </div>
+    );
+  });
 };
 
 export default function App() {
@@ -264,6 +299,22 @@ export default function App() {
 
   const [stats, setStats] = useState<UserStats>(defaultStats);
   const [currentUser, setCurrentUser] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  // Heartbeat for real-time status
+  useEffect(() => {
+    if (!currentUserId) return;
+    
+    // Initial heartbeat
+    supabaseService.heartbeat(currentUserId);
+    
+    // Periodic heartbeat every 60 seconds
+    const interval = setInterval(() => {
+      supabaseService.heartbeat(currentUserId);
+    }, 60000);
+    
+    return () => clearInterval(interval);
+  }, [currentUserId]);
 
   const [teachers, setTeachers] = useState<TeacherModel[]>([]);
   const [globalStudents, setGlobalStudents] = useState<Student[]>([]);
@@ -277,65 +328,99 @@ export default function App() {
   }>({ teacherId: null, isOpen: false, selectedGroups: [], selectedSubjects: [], activeYear: "1" });
 
   const [adminDashboardTab, setAdminDashboardTab] = useState<"stats" | "teachers" | "students">("stats");
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showCreateUserModal, setShowCreateUserModal] = useState<{ isOpen: boolean; role: "Teacher" | "Student" }>({ isOpen: false, role: "Teacher" });
+  const [userToDelete, setUserToDelete] = useState<{ id: string, name: string, role: string } | null>(null);
+  const [createUserForm, setCreateUserForm] = useState({ username: "", email: "", password: "", grade: "" });
+  const [isDeletingUser, setIsDeletingUser] = useState(false);
+  const [isCreatingUser, setIsCreatingUser] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ current: "", new: "", confirm: "" });
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   const [activeTab, setActiveTab] = useState<
     "home" | "collection" | "shop" | "challenges" | "profile"
   >("home");
 
+  // Reset internal navigation when changing tabs
+  useEffect(() => {
+    setSelectedSubject(null);
+    setSelectedTopic(null);
+    setSelectedTask(null);
+  }, [activeTab]);
+
+  // Integration of global configuration from Supabase
+  useEffect(() => {
+    const fetchGlobalConfig = async () => {
+      const key = await supabaseService.getGlobalMasterKey();
+      if (key) {
+        setMasterTeacherKey(key);
+        localStorage.setItem('masterTeacherKey', key);
+      }
+    };
+    fetchGlobalConfig();
+  }, []);
+
   // NEW admin state
   const [allStudents, setAllStudents] = useState<UserStats[]>([]);
+  const [masterTeacherKey, setMasterTeacherKey] = useState(() => {
+    return localStorage.getItem('masterTeacherKey') || "DOCENTE-2026";
+  });
+  const [showMasterKeyInProfile, setShowMasterKeyInProfile] = useState(false);
+  const [isEditingMasterKey, setIsEditingMasterKey] = useState(false);
+  const [tempMasterKey, setTempMasterKey] = useState(masterTeacherKey);
+
+  // Persistence for master key
   useEffect(() => {
-    const rawUsers: UserStats[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('cardacademy_stats_')) {
-           try {
-               const stat: UserStats = JSON.parse(localStorage.getItem(key)!);
-               if (stat) rawUsers.push(stat);
-           } catch(e){}
-        }
+    localStorage.setItem('masterTeacherKey', masterTeacherKey);
+    setTempMasterKey(masterTeacherKey);
+  }, [masterTeacherKey]);
+
+  const loadUsers = React.useCallback(async () => {
+    try {
+      const users = await supabaseService.fetchAllUsers();
+      
+      setAllStudents(users.filter(u => u.role === 'Student'));
+
+      const computeStudents: Student[] = users.filter(u => u.role === 'Student').map(s => ({
+          id: s.id || s.username || '',
+          name: s.username || 'Alumno',
+          grade: s.grade || '2A',
+          collection: s.collection || [],
+          completedTasks: s.completedTasks || [],
+          pendingTasks: s.pendingTasks || [],
+          streak: s.streak || 0,
+          tokens: s.tokens || 0,
+          lastActive: s.lastActive,
+          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${s.username}`
+      }));
+      setGlobalStudents(computeStudents);
+
+      const computeTeachers: TeacherModel[] = users.filter(u => u.role === 'Teacher').map(t => ({
+          id: t.id || t.username || '',
+          name: t.username || 'Profesor',
+          subjects: t.assignedSubjects || [],
+          groups: t.assignedGroups || [],
+          students: users.filter(u => u.role === 'Student' && (t.assignedGroups || []).includes(u.grade)).length,
+          status: 'Active',
+          lastActive: t.lastActive
+      }));
+
+      setTeachers(computeTeachers);
+    } catch (e) {
+      console.error("Error loading all users from Supabase:", e);
     }
-    
-    setAllStudents(rawUsers.filter(u => u.role === 'Student'));
+  }, [stats.role, stats.username, currentUser]);
 
-    const computeStudents: Student[] = rawUsers.filter(u => u.role === 'Student').map(s => ({
-        id: s.username || '',
-        name: s.username || 'Alumno',
-        grade: s.grade || '2A',
-        collection: s.collection || [],
-        completedTasks: s.completedTasks || [],
-        streak: s.streak || 0,
-        tokens: s.tokens || 0,
-        avatar: undefined
-    }));
-    setGlobalStudents(computeStudents);
-
-    const computeTeachers: TeacherModel[] = rawUsers.filter(u => u.role === 'Teacher').map(t => ({
-        id: t.username || '',
-        name: t.username || 'Profesor',
-        subjects: t.assignedSubjects || [],
-        groups: t.assignedGroups || [],
-        students: 30,
-        status: 'Active'
-    }));
-
-    const isDemo = currentUser?.toLowerCase().includes('demo') || currentUser?.toLowerCase() === 'admin' || stats?.username?.toLowerCase().includes('demo') || stats?.username?.toLowerCase() === 'admin';
-    if (isDemo) {
-        const teacherMap = new Map();
-        MOCK_TEACHERS.forEach(t => teacherMap.set(t.id, t));
-        computeTeachers.forEach(t => teacherMap.set(t.id, t));
-        setTeachers(Array.from(teacherMap.values()));
-    } else {
-        setTeachers(computeTeachers);
+  useEffect(() => {
+    // Solo cargar usuarios si está autenticado y tiene permisos
+    if (isAuthenticated && (stats.role === 'Admin' || stats.role === 'Teacher')) {
+      loadUsers();
     }
-  }, [stats.role, stats.username, currentUser, adminDashboardTab]);
+  }, [loadUsers, adminDashboardTab, isAuthenticated, stats.role]);
 
   const MOCK_STUDENTS = React.useMemo(() => {
-      const isDemo = currentUser?.toLowerCase().includes('demo') || currentUser?.toLowerCase() === 'admin' || stats?.username?.toLowerCase().includes('demo') || stats?.username?.toLowerCase() === 'admin';
       const map = new Map<string, Student>();
-      if (isDemo) {
-          IMPORTED_MOCK_STUDENTS.forEach(s => map.set(s.id, s));
-      }
+      // Always include current real students from Supabase
       globalStudents.forEach(s => map.set(s.id, s));
       return Array.from(map.values());
   }, [globalStudents, currentUser, stats.username]);
@@ -359,6 +444,39 @@ export default function App() {
   const [isGeneratingChallenge, setIsGeneratingChallenge] = useState(false);
   const [sessionCompletedChallenges, setSessionCompletedChallenges] = useState<Set<string>>(new Set());
   const [animatingCards, setAnimatingCards] = useState<string[]>([]);
+  const [dbCards, setDbCards] = useState<CardType[]>([]);
+
+  // Fetch all cards from database
+  useEffect(() => {
+    const fetchCards = async () => {
+      const { data, error } = await supabase.from('cards').select('*');
+      if (error) {
+        console.error("Error fetching cards from DB:", error);
+        return;
+      }
+      if (data && data.length > 0) {
+        const mappedCards: CardType[] = data.map(c => ({
+          id: c.id,
+          name: c.name,
+          rarity: c.rarity as any,
+          sourcePackId: c.pack_type,
+          description: c.description || "",
+          imageUrl: c.image_url || `https://api.dicebear.com/7.x/identicon/svg?seed=${c.id}`,
+          category: (c.category as any) || 'Collectible'
+        }));
+        setDbCards(mappedCards);
+      }
+    };
+    fetchCards();
+  }, []);
+
+  // Compute total cards (DB + Constants as fallback)
+  const allAvailableCards = React.useMemo(() => {
+    const cardMap = new Map<string, CardType>();
+    INITIAL_CARDS.forEach(c => cardMap.set(c.id, c));
+    dbCards.forEach(c => cardMap.set(c.id, c));
+    return Array.from(cardMap.values());
+  }, [dbCards]);
 
   const generateDailyChallenge = async () => {
     setIsGeneratingChallenge(true);
@@ -490,7 +608,7 @@ export default function App() {
     } catch (error: any) {
       console.error("Error generating quiz:", error);
       const errorMessage = error?.message || "Error desconocido";
-      alert(
+      toast.error(
         `Hubo un error al generar el quiz con IA: ${errorMessage}. Por favor intenta de nuevo.`,
       );
     } finally {
@@ -498,96 +616,111 @@ export default function App() {
     }
   };
 
-  // Load from local storage
+  // Load from Supabase or local storage on mount
   useEffect(() => {
-    const savedUser = localStorage.getItem("cardacademy_current_user");
-    if (savedUser) {
-      setCurrentUser(savedUser);
-      const saved = localStorage.getItem(`cardacademy_stats_${savedUser}`);
-      if (saved) {
-        const parsedStats: UserStats = JSON.parse(saved);
-        const today = new Date().toDateString();
-        if (!parsedStats.dailyLimits || parsedStats.dailyLimits.lastResetDate !== today) {
-          parsedStats.dailyLimits = {
-            lastResetDate: today,
-            easyCompleted: 0,
-            mediumCompleted: 0,
-            hardCompleted: 0,
-          };
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        try {
+          const fetchedStats = await supabaseService.getProfile(session.user.id, session.user.user_metadata);
+          setStats(fetchedStats);
+          setCurrentUserId(session.user.id);
+          setCurrentUser(fetchedStats.username || 'Usuario');
+          setIsAuthenticated(true);
+        } catch (e: any) {
+          if (e.message === 'Tu perfil de usuario no fue encontrado.') {
+            // Silently clean up orphan session
+            await handleLogout();
+          } else {
+            console.error("Error fetching user stats on mount:", e);
+          }
         }
-        setStats(parsedStats);
+      } else {
+        const savedUser = localStorage.getItem("cardacademy_current_user");
+        if (savedUser) {
+          setCurrentUser(savedUser);
+          const saved = localStorage.getItem(`cardacademy_stats_${savedUser}`);
+          if (saved) {
+            const parsedStats: UserStats = JSON.parse(saved);
+            const today = new Date().toDateString();
+            if (!parsedStats.dailyLimits || parsedStats.dailyLimits.lastResetDate !== today) {
+              parsedStats.dailyLimits = {
+                lastResetDate: today,
+                easyCompleted: 0,
+                mediumCompleted: 0,
+                hardCompleted: 0,
+              };
+            }
+            setStats(parsedStats);
+          }
+        }
+        const authStatus = localStorage.getItem("cardacademy_is_authenticated");
+        if (authStatus === "true") setIsAuthenticated(true);
       }
-    }
-
-    const authStatus = localStorage.getItem("cardacademy_is_authenticated");
-    if (authStatus === "true") setIsAuthenticated(true);
-
-    const completed = localStorage.getItem("cardacademy_challenge_completed");
-    if (completed === new Date().toDateString()) setHasCompletedDaily(true);
+      
+      const completed = localStorage.getItem("cardacademy_challenge_completed");
+      if (completed === new Date().toDateString()) setHasCompletedDaily(true);
+    };
+    checkSession();
   }, []);
 
-  // Save to local storage
+  // Save to Supabase and local storage
   useEffect(() => {
+    if (currentUserId && stats.username) {
+      // Sync with Supabase (fire and forget for now, but in production consider debouncing)
+      supabaseService.updateUserStats(currentUserId, stats).catch(console.error);
+    }
     if (currentUser) {
       localStorage.setItem(`cardacademy_stats_${currentUser}`, JSON.stringify(stats));
     }
-  }, [stats, currentUser]);
+  }, [stats, currentUserId, currentUser]);
 
-  const handleLogin = (role: UserRole, username: string, grade?: string) => {
+  const handleLogin = (role: UserRole, username: string, grade?: string, initialStats?: UserStats) => {
     const freshUser = username || 'Alumno';
     setCurrentUser(freshUser);
     localStorage.setItem("cardacademy_current_user", freshUser);
     
-    const savedStats = localStorage.getItem(`cardacademy_stats_${freshUser}`);
-    if (savedStats) {
-      setStats(JSON.parse(savedStats));
+    if (initialStats) {
+      setStats(initialStats);
+      if (initialStats.id) setCurrentUserId(initialStats.id);
     } else {
-      const freshStats: UserStats = {
-        ...defaultStats,
-        tokens: 0,
-        streak: 0,
-        collection: [],
-        unstickedCards: [],
-        completedTasks: [],
-        packCurrencies: {
-          pack_jacobo: 0,
-          pack_culiacan: 0,
-          pack_six_seven: 0,
-        }
-      };
+      const savedStats = localStorage.getItem(`cardacademy_stats_${freshUser}`);
+      if (savedStats) {
+        setStats(JSON.parse(savedStats));
+      } else {
+        const freshStats: UserStats = {
+          ...defaultStats,
+          tokens: 0,
+          streak: 0,
+          collection: [],
+          unstickedCards: [],
+          completedTasks: [],
+          packCurrencies: {
+            pack_jacobo: 0,
+            pack_culiacan: 0,
+            pack_six_seven: 0,
+          }
+        };
 
-      setStats({
-        ...freshStats,
-        role: role,
-        originalRole: role,
-        username: freshUser,
-        grade: (grade as any) || (role === "Student" ? "2A" : "2D"),
-        assignedSubjects:
-          role === "Teacher"
-            ? ["tec_2", "art_3"]
-            : role === "Admin"
+        setStats({
+          ...freshStats,
+          role: role,
+          originalRole: role,
+          username: freshUser,
+          grade: (grade as any) || (role === "Student" ? "2A" : "2D"),
+          assignedSubjects:
+            role === "Teacher"
               ? []
-              : ["math_2"],
-        assignedGroups:
-          role === "Teacher"
-            ? ["2D", "3A", "3B", "3C", "3D"]
-            : role === "Admin"
+              : role === "Admin"
+                ? []
+                : ["math_2"],
+          assignedGroups:
+            role === "Teacher"
               ? []
-              : [(grade as any) || "2A"],
-      });
-      
-      // Admin notification for new student
-      if (role === 'Student') {
-        const adminNotif = localStorage.getItem('cardacademy_admin_notifs') || '[]';
-        const notifs = JSON.parse(adminNotif);
-        notifs.push({
-          id: Date.now().toString(),
-          type: 'new_student',
-          student: freshUser,
-          grade: (grade as any) || "2A",
-          date: new Date().toISOString()
+              : role === "Admin"
+                ? []
+                : [(grade as any) || "2A"],
         });
-        localStorage.setItem('cardacademy_admin_notifs', JSON.stringify(notifs));
       }
     }
     
@@ -595,9 +728,12 @@ export default function App() {
     localStorage.setItem("cardacademy_is_authenticated", "true");
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     setIsAuthenticated(false);
     setCurrentUser(null);
+    setCurrentUserId(null);
+    setStats(defaultStats); // Reset stats on logout
     localStorage.removeItem("cardacademy_is_authenticated");
     localStorage.removeItem("cardacademy_current_user");
   };
@@ -657,7 +793,7 @@ export default function App() {
     });
     
     if (duplicatePoints > 0) {
-      alert(`¡Obtuviste ${duplicateCount} carta(s) repetida(s)! Ganaste ${duplicatePoints} moneda(s) para la tienda.`);
+      toast.info(`¡Obtuviste ${duplicateCount} carta(s) repetida(s)! Ganaste ${duplicatePoints} moneda(s) para la tienda.`);
     }
 
     setAnimatingCards(trulyNewCardIds);
@@ -669,7 +805,7 @@ export default function App() {
       setActivePack(pack);
       setShowPackOpener(true);
     } else {
-      alert(`Medallas insuficientes para adquirir ${pack.name}.`);
+      toast.error(`Medallas insuficientes para adquirir ${pack.name}.`);
     }
   };
 
@@ -704,7 +840,7 @@ export default function App() {
       if (task.reward.pack) {
         setShowPackOpener(true);
       } else if (task.reward.cardId || task.reward.tokens) {
-        alert(
+        toast.success(
           `¡Misión Cumplida! Has ganado: ${task.reward.tokens ? `${task.reward.tokens} Medallas` : ""} ${task.reward.cardId ? " y una Nueva Tarjeta" : ""}`,
         );
       }
@@ -713,12 +849,26 @@ export default function App() {
     });
   };
 
+  const submitTaskForReview = (task: Task) => {
+    setStats((prev) => {
+      const newStats = { ...prev };
+      if (!newStats.pendingTasks) {
+        newStats.pendingTasks = [];
+      }
+      if (!newStats.pendingTasks.includes(task.id) && !newStats.completedTasks.includes(task.id)) {
+        newStats.pendingTasks = [...newStats.pendingTasks, task.id];
+      }
+      return newStats;
+    });
+  };
+
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
 
-  const selectedCard = INITIAL_CARDS.find((c) => c.id === selectedCardId);
+  const selectedCard = allAvailableCards.find((c) => c.id === selectedCardId);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans pb-24 selection:bg-indigo-500/30">
+      <Toaster position="top-center" richColors theme="dark" />
       <AnimatePresence mode="wait">
         {!isAuthenticated ? (
           <motion.div
@@ -727,7 +877,11 @@ export default function App() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
-            <LoginPage onLogin={handleLogin} />
+            <LoginPage 
+              onLogin={handleLogin} 
+              masterTeacherKey={masterTeacherKey} 
+              schoolGroups={SCHOOL_GROUPS}
+            />
           </motion.div>
         ) : (
           <motion.div
@@ -742,7 +896,7 @@ export default function App() {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md"
+                  className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 "
                   onClick={() => setSelectedCardId(null)}
                 >
                   <motion.div
@@ -755,11 +909,11 @@ export default function App() {
                     <CardComponent
                       card={selectedCard}
                       isExpanded={true}
-                      className="w-[280px] sm:w-[320px] aspect-[2/3] max-w-full shadow-[0_0_50px_rgba(79,70,229,0.3)]"
+                      className="w-[280px] sm:w-[320px] aspect-[2/3] max-w-full shadow-lg"
                     />
                     <button
                       onClick={() => setSelectedCardId(null)}
-                      className="bg-slate-800 text-white px-10 py-3 rounded-full font-black uppercase tracking-widest border border-slate-700 hover:bg-slate-700 transition-colors shadow-xl"
+                      className="bg-slate-800 text-white px-10 py-3 rounded-full font-black uppercase tracking-widest border border-slate-700 hover:bg-slate-700 transition-colors shadow-md"
                     >
                       Regresar
                     </button>
@@ -770,7 +924,7 @@ export default function App() {
 
             {/* Top Header */}
             <nav className="h-16 md:h-20 bg-slate-900/80 border-b border-indigo-500/30 sticky top-0 z-30 px-3 md:px-6 flex items-center justify-center">
-              <div className="absolute inset-0 -z-10 backdrop-blur-md pointer-events-none"></div>
+              <div className="absolute inset-0 -z-10  pointer-events-none"></div>
               <div className="w-full max-w-6xl flex justify-between items-center gap-2 relative">
                 {/* Mobile Center Logo */}
                 <div className="md:hidden absolute left-1/2 -translate-x-1/2 pointer-events-none z-10">
@@ -788,7 +942,7 @@ export default function App() {
                       size="xs"
                       className="md:scale-110 origin-left"
                       subtitle={
-                        <p className="hidden md:flex text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] items-center gap-2 font-mono leading-none">
+                        <p className="hidden md:flex text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] items-center gap-2 font-mono leading-none">
                           <span>
                             {stats.role === "Admin"
                               ? "Admin"
@@ -808,8 +962,8 @@ export default function App() {
                         <AnimatedTokens tokens={stats.tokens} className="text-amber-400 font-bold text-xs" />
                         <Coins className="text-amber-500 shrink-0" size={12} />
                       </div>
-                      <div className="flex items-center gap-1 sm:gap-2 bg-gradient-to-r from-orange-500/10 to-rose-500/10 px-1.5 py-1 rounded-full border border-rose-500/30 shadow-[0_0_15px_rgba(244,63,94,0.15)] shrink min-w-0">
-                        <Flame className="text-rose-500 animate-pulse drop-shadow-[0_0_8px_rgba(244,63,94,0.5)] shrink-0" size={14} />
+                      <div className="flex items-center gap-1 sm:gap-2 bg-gradient-to-r from-orange-500/10 to-rose-500/10 px-1.5 py-1 rounded-full border border-rose-500/30 shadow-lg shrink min-w-0">
+                        <Flame className="text-rose-500 animate-pulse  shrink-0" size={14} />
                         <span className="text-rose-400 font-black font-mono text-xs tracking-tighter drop-shadow-md truncate">
                           {stats.streak}
                         </span>
@@ -819,12 +973,12 @@ export default function App() {
                   {/* Mobile Left Teacher Students Online */}
                   {stats.role === "Teacher" && (
                     <div className="flex md:hidden items-center gap-1 sm:gap-3 shrink min-w-0">
-                      <div className="flex items-center gap-1.5 bg-indigo-500/10 px-2 py-1 rounded-full border border-indigo-500/30 shrink min-w-0 shadow-[0_0_15px_rgba(99,102,241,0.15)]">
-                        <span className="text-[10px] uppercase text-indigo-300 font-black tracking-widest hidden sm:inline-block">Alumnos</span>
-                        <span className="text-[10px] uppercase text-indigo-300 font-black tracking-widest sm:hidden">Alum.</span>
-                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]"></div>
+                      <div className="flex items-center gap-1.5 bg-indigo-500/10 px-2 py-1 rounded-full border border-indigo-500/30 shrink min-w-0 shadow-lg">
+                        <span className="text-[10px] uppercase text-cyan-400 font-black tracking-widest hidden sm:inline-block">Alumnos</span>
+                        <span className="text-[10px] uppercase text-cyan-400 font-black tracking-widest sm:hidden">Alum.</span>
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-lg"></div>
                         <span className="text-indigo-400 font-black font-mono text-xs tracking-tighter truncate">
-                          {MOCK_STUDENTS.filter(s => stats.assignedGroups.includes(s.grade) && ((s.tokens % 3 === 0) || (s.streak > 8))).length}
+                          {globalStudents.filter(s => stats.assignedGroups.includes(s.grade) && ((s.tokens % 3 === 0) || (s.streak > 8))).length}
                         </span>
                       </div>
                     </div>
@@ -841,8 +995,8 @@ export default function App() {
                           Medallas
                         </span>
                       </div>
-                      <div className="flex items-center gap-2.5 bg-gradient-to-r from-orange-500/10 to-rose-500/10 px-4 py-1.5 rounded-full border border-rose-500/30 shadow-[0_0_15px_rgba(244,63,94,0.15)] shrink min-w-0">
-                        <Flame className="text-rose-500 animate-pulse drop-shadow-[0_0_8px_rgba(244,63,94,0.5)] shrink-0" size={14} />
+                      <div className="flex items-center gap-2.5 bg-gradient-to-r from-orange-500/10 to-rose-500/10 px-4 py-1.5 rounded-full border border-rose-500/30 shadow-lg shrink min-w-0">
+                        <Flame className="text-rose-500 animate-pulse  shrink-0" size={14} />
                         <span className="text-rose-400 font-black font-mono text-base tracking-tighter drop-shadow-md truncate">
                           {stats.streak}
                         </span>
@@ -855,13 +1009,13 @@ export default function App() {
                   {/* Desktop Right Teacher Students Online */}
                   {stats.role === "Teacher" && (
                     <div className="hidden md:flex items-center gap-3 shrink min-w-0">
-                      <div className="flex items-center gap-2.5 bg-indigo-500/10 px-4 py-1.5 rounded-full border border-indigo-500/30 shadow-[0_0_15px_rgba(99,102,241,0.15)] shrink min-w-0">
-                        <span className="text-[11px] uppercase text-indigo-300 font-black tracking-widest">
+                      <div className="flex items-center gap-2.5 bg-indigo-500/10 px-4 py-1.5 rounded-full border border-indigo-500/30 shadow-lg shrink min-w-0">
+                        <span className="text-[11px] uppercase text-cyan-400 font-black tracking-widest">
                           Alumnos
                         </span>
-                        <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]"></div>
+                        <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-lg"></div>
                         <span className="text-indigo-400 font-black font-mono text-base tracking-tighter truncate">
-                          {MOCK_STUDENTS.filter(s => stats.assignedGroups.includes(s.grade) && ((s.tokens % 3 === 0) || (s.streak > 8))).length}
+                          {globalStudents.filter(s => stats.assignedGroups.includes(s.grade) && ((s.tokens % 3 === 0) || (s.streak > 8))).length}
                         </span>
                       </div>
                     </div>
@@ -887,7 +1041,7 @@ export default function App() {
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             onClick={() => setIsNotificationsOpen(false)}
-                            className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-40"
+                            className="fixed inset-0 bg-slate-950/60  z-40"
                           />
                           <motion.div
                             initial={{ opacity: 0, y: 10, scale: 0.95 }}
@@ -895,7 +1049,7 @@ export default function App() {
                             exit={{ opacity: 0, y: 10, scale: 0.95 }}
                             style={{ originX: 1, originY: 0 }}
                             className={cn(
-                              "fixed top-[72px] inset-x-4 mx-auto w-auto max-w-[320px] sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-3 sm:w-80 sm:max-w-none bg-slate-900 border-2 rounded-3xl shadow-2xl overflow-hidden z-50 flex flex-col",
+                              "fixed top-[72px] inset-x-4 mx-auto w-auto max-w-[320px] sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-3 sm:w-80 sm:max-w-none bg-slate-900 border-2 rounded-3xl shadow-lg overflow-hidden z-50 flex flex-col",
                               stats.role === "Admin"
                                 ? "border-amber-500/50 shadow-amber-500/20"
                                 : stats.role === "Teacher"
@@ -911,7 +1065,7 @@ export default function App() {
                               2 NUEVAS
                             </span>
                           </div>
-                          <div className="max-h-[60vh] overflow-y-auto no-scrollbar bg-slate-900">
+                          <div className="max-h-[60vh] overflow-y-auto transform-gpu no-scrollbar bg-slate-900">
                             {stats.role === "Student" ? (
                               <>
                                 <div className="p-4 border-b border-slate-800/50 hover:bg-slate-800 transition-colors cursor-pointer group">
@@ -923,7 +1077,7 @@ export default function App() {
                                     ha marcado tu desafío de Matemáticas como
                                     completado.
                                   </p>
-                                  <span className="text-[9px] text-slate-500 font-black uppercase mt-2 block tracking-widest group-hover:text-slate-400 transition-colors">
+                                  <span className="text-[9px] text-slate-400 font-black uppercase mt-2 block tracking-widest group-hover:text-slate-300 transition-colors">
                                     Hace 10 min
                                   </span>
                                 </div>
@@ -936,7 +1090,7 @@ export default function App() {
                                     no aprobó tu evidencia. Revisa los
                                     comentarios.
                                   </p>
-                                  <span className="text-[9px] text-slate-500 font-black uppercase mt-2 block tracking-widest group-hover:text-slate-400 transition-colors">
+                                  <span className="text-[9px] text-slate-400 font-black uppercase mt-2 block tracking-widest group-hover:text-slate-300 transition-colors">
                                     Hace 2 horas
                                   </span>
                                 </div>
@@ -1015,7 +1169,7 @@ export default function App() {
                               </>
                             )}
                             <div className="p-3 text-center bg-slate-900">
-                              <button className="text-[10px] font-black uppercase tracking-widest text-indigo-400 hover:text-indigo-300 transition-colors py-2">
+                              <button className="text-[10px] font-black uppercase tracking-widest text-cyan-400 hover:text-cyan-300 transition-colors py-2">
                                 Marcar todas como leídas
                               </button>
                             </div>
@@ -1075,7 +1229,7 @@ export default function App() {
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             onClick={() => setIsProfileOpen(false)}
-                            className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-40"
+                            className="fixed inset-0 bg-slate-950/60  z-40"
                           />
                           <motion.div
                             initial={{ opacity: 0, y: 10, scale: 0.95 }}
@@ -1083,7 +1237,7 @@ export default function App() {
                             exit={{ opacity: 0, y: 10, scale: 0.95 }}
                             style={{ originX: 1, originY: 0 }}
                             className={cn(
-                              "fixed top-[72px] inset-x-4 mx-auto w-auto max-w-[280px] sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-3 sm:w-64 sm:max-w-none bg-slate-900 border-2 rounded-3xl shadow-2xl overflow-hidden z-50 p-2",
+                              "fixed top-[72px] inset-x-4 mx-auto w-auto max-w-[280px] sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-3 sm:w-64 sm:max-w-none bg-slate-900 border-2 rounded-3xl shadow-lg overflow-hidden z-50 p-2",
                             stats.role === "Admin"
                               ? "border-amber-500/50 shadow-amber-500/20"
                               : stats.role === "Teacher"
@@ -1108,7 +1262,7 @@ export default function App() {
                               <p className="font-bold text-slate-100 uppercase tracking-tight truncate">
                                 {stats.username}
                               </p>
-                              <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest leading-none mt-1">
+                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mt-1">
                                 ID: #48292-X
                               </p>
                             </div>
@@ -1212,7 +1366,7 @@ export default function App() {
                     className="space-y-6 md:space-y-8 pb-24"
                   >
                     {/* Profile Header Hero */}
-                    <div className="bg-slate-900/50 border border-indigo-500/10 rounded-3xl md:rounded-[2.5rem] overflow-hidden shadow-xl relative">
+                    <div className="bg-slate-900/50 border border-indigo-500/10 rounded-3xl md:rounded-[2.5rem] overflow-hidden shadow-md relative">
                       <div className="absolute top-0 inset-x-0 h-24 md:h-32 bg-gradient-to-r from-indigo-900/40 to-slate-900 z-0">
                         <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20"></div>
                         <div className="absolute inset-0 bg-gradient-to-t from-slate-900 to-transparent"></div>
@@ -1220,7 +1374,7 @@ export default function App() {
 
                       <div className="px-5 md:px-8 pt-12 md:pt-16 pb-6 relative z-10">
                         <div className="flex flex-col md:flex-row items-center md:items-end gap-4 md:gap-6">
-                          <div className="shrink-0 w-24 h-24 md:w-28 md:h-28 rounded-2xl md:rounded-[1.5rem] bg-slate-950 border-4 border-indigo-600 p-1 shadow-[0_20px_50px_rgba(79,70,229,0.3)] relative group overflow-hidden">
+                          <div className="shrink-0 w-24 h-24 md:w-28 md:h-28 rounded-2xl md:rounded-[1.5rem] bg-slate-950 border-4 border-indigo-600 p-1 shadow-lg relative group overflow-hidden">
                             <div className="w-full h-full rounded-xl md:rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-900 flex items-center justify-center text-white font-black text-4xl md:text-5xl shadow-inner uppercase">
                               {stats.role.charAt(0)}
                             </div>
@@ -1230,8 +1384,8 @@ export default function App() {
                           </div>
                           <div className="flex-1 text-center md:text-left min-w-0 mt-2 md:mt-0">
                             <div className="flex flex-col md:flex-row items-center gap-2 mb-1">
-                              <h2 className="text-xl sm:text-2xl md:text-3xl font-black italic uppercase tracking-tighter text-white leading-tight truncate">
-                                SESIÓN_{stats.role.toUpperCase()}
+                              <h2 className="text-xl sm:text-2xl md:text-3xl font-black italic uppercase tracking-tighter text-white leading-tight pr-2">
+                                {stats.username}
                               </h2>
                             </div>
                             <p className="text-slate-400 font-bold tracking-widest uppercase text-[9px] md:text-xs">
@@ -1251,12 +1405,25 @@ export default function App() {
                                  const newName = window.prompt("Ingresa nuevo nombre de usuario:", stats.username);
                                  if (newName?.trim()) {
                                     setStats(s => ({...s, username: newName.trim()}));
-                                    alert("Nombre actualizado exitosamente.");
+                                    toast.success("Nombre actualizado exitosamente.");
                                  }
                                }}
                                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-black uppercase tracking-widest text-[9px] md:text-[10px] transition-all flex items-center gap-1.5 border border-slate-700 active:scale-95">
-                              <Settings size={14} /> Config
+                              <Settings size={14} /> Perfil
                             </button>
+                            {stats.role === "Teacher" && (
+                              <button 
+                                onClick={() => setAssignmentModal({
+                                  teacherId: currentUserId || stats.id || "",
+                                  isOpen: true,
+                                  selectedGroups: stats.assignedGroups || [],
+                                  selectedSubjects: stats.assignedSubjects || [],
+                                  activeYear: "1"
+                                })}
+                                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-black uppercase tracking-widest text-[9px] md:text-[10px] transition-all flex items-center gap-1.5 border border-indigo-500 shadow-lg shadow-indigo-500/20 active:scale-95">
+                                <UserCog size={14} /> Configurar
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1265,7 +1432,7 @@ export default function App() {
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6">
                       <div className="lg:col-span-4 space-y-4 md:space-y-6">
                         {/* STATISTICS CARD */}
-                        <div className="bg-slate-900 border border-slate-800 rounded-[1.5rem] md:rounded-3xl p-5 md:p-6 shadow-2xl relative overflow-hidden group">
+                        <div className="bg-slate-900 border border-slate-800 rounded-[1.5rem] md:rounded-3xl p-5 md:p-6 shadow-lg relative overflow-hidden group">
                           <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full -mr-16 -mt-16 group-hover:scale-110 transition-transform duration-700"></div>
                           <h3 className="text-xl font-black italic uppercase tracking-tight text-white mb-5 md:mb-6 flex items-center gap-3">
                             <Zap className="text-indigo-400" size={20} />{" "}
@@ -1276,17 +1443,17 @@ export default function App() {
                               ? [
                                   {
                                     label: "Desafíos por revisar",
-                                    val: MOCK_STUDENTS.filter((s) => stats.assignedGroups.includes(s.grade)).reduce((acc, curr) => acc + curr.completedTasks.length, 0), // Simulating pending reviews for now
+                                    val: globalStudents.filter((s) => stats.assignedGroups.includes(s.grade)).reduce((acc, curr) => acc + curr.completedTasks.length, 0), // Simulating pending reviews for now
                                     color: "text-emerald-400",
                                   },
                                   {
                                     label: "Medallas de alumnos",
-                                    val: MOCK_STUDENTS.filter((s) => stats.assignedGroups.includes(s.grade)).reduce((acc, curr) => acc + curr.tokens, 0),
+                                    val: globalStudents.filter((s) => stats.assignedGroups.includes(s.grade)).reduce((acc, curr) => acc + curr.tokens, 0),
                                     color: "text-amber-400",
                                   },
                                   {
                                     label: "Racha global",
-                                    val: `${MOCK_STUDENTS.filter((s) => stats.assignedGroups.includes(s.grade)).reduce((acc, curr) => acc + curr.streak, 0)} Días`,
+                                    val: `${globalStudents.filter((s) => stats.assignedGroups.includes(s.grade)).reduce((acc, curr) => acc + curr.streak, 0)} Días`,
                                     color: "text-rose-400",
                                   }
                                 ]
@@ -1304,7 +1471,7 @@ export default function App() {
                                   ...(stats.role === "Student" 
                                     ? [{
                                         label: "Album completado",
-                                        val: `${Math.round((stats.collection.length / INITIAL_CARDS.length) * 100)}%`,
+                                        val: `${Math.round((stats.collection.length / allAvailableCards.length) * 100)}%`,
                                         color: "text-indigo-400",
                                         bar: "bg-indigo-400",
                                         max: 100,
@@ -1325,7 +1492,7 @@ export default function App() {
                                         width: `${Math.min(100, ((typeof idx.val === "number" ? idx.val : parseInt(idx.val.toString())) / idx.max!) * 100)}%`,
                                       }}
                                       className={cn(
-                                        "h-full rounded-full shadow-[0_0_10px_rgba(0,0,0,0.5)]",
+                                        "h-full rounded-full shadow-lg",
                                         idx.bar,
                                       )}
                                     ></motion.div>
@@ -1336,8 +1503,95 @@ export default function App() {
                           </div>
                         </div>
 
+                        {/* ADMIN MASTER KEY CARD */}
+                        {stats.role === "Admin" && (
+                          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-lg relative overflow-hidden group">
+                           <div className="absolute top-0 right-0 w-32 h-32 bg-violet-500/5 rounded-full -mr-16 -mt-16 group-hover:scale-110 transition-transform duration-700"></div>
+                            <h3 className="text-xl font-black italic uppercase tracking-tight text-white mb-5 flex items-center gap-3">
+                              <Lock className="text-violet-400" size={20} />{" "}
+                              Seguridad
+                            </h3>
+                            <div className="space-y-4">
+                            <div className="bg-slate-800/50 border border-slate-700/50 p-4 rounded-2xl flex items-center justify-between group/key">
+                                <div>
+                                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1">
+                                    Llave Registro Docentes
+                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    {isEditingMasterKey ? (
+                                      <input 
+                                        type="text"
+                                        value={tempMasterKey}
+                                        onChange={(e) => setTempMasterKey(e.target.value.toUpperCase())}
+                                        className="bg-slate-950 border border-indigo-500/50 text-white px-2 py-1 rounded-lg text-sm font-black w-32 outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                        autoFocus
+                                      />
+                                    ) : (
+                                      <span className="text-sm font-black text-white uppercase tracking-[0.1em]">
+                                        {showMasterKeyInProfile ? masterTeacherKey : "••••••••"}
+                                      </span>
+                                    )}
+                                    <button 
+                                      onClick={() => setShowMasterKeyInProfile(!showMasterKeyInProfile)}
+                                      className="text-slate-600 hover:text-slate-400 p-1"
+                                    >
+                                      {showMasterKeyInProfile ? <EyeOff size={12} /> : <Eye size={12} />}
+                                    </button>
+                                  </div>
+                                </div>
+                                <div className="flex gap-2">
+                                  {isEditingMasterKey ? (
+                                    <>
+                                      <button 
+                                        onClick={() => {
+                                          if (tempMasterKey.trim()) {
+                                            const newKey = tempMasterKey.trim().toUpperCase();
+                                            setMasterTeacherKey(normKey => newKey);
+                                            setIsEditingMasterKey(false);
+                                            // Persist to Supabase
+                                            supabaseService.setGlobalMasterKey(newKey).then(() => {
+                                              toast.success("Llave maestra actualizada globalmente (MAYÚSCULAS).");
+                                            }).catch(() => {
+                                              toast.success("Llave maestra actualizada (local).");
+                                            });
+                                          }
+                                        }}
+                                        className="p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 hover:bg-emerald-500/20 transition-all shadow-md active:scale-95"
+                                      >
+                                        <CheckCircle2 size={14} />
+                                      </button>
+                                      <button 
+                                        onClick={() => {
+                                          setIsEditingMasterKey(false);
+                                          setTempMasterKey(masterTeacherKey);
+                                        }}
+                                        className="p-2.5 bg-slate-800 border border-slate-700 rounded-xl text-slate-400 hover:text-white transition-all shadow-md active:scale-95"
+                                      >
+                                        <X size={14} />
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button 
+                                      onClick={() => {
+                                        setIsEditingMasterKey(true);
+                                        setShowMasterKeyInProfile(true);
+                                      }}
+                                      className="p-2.5 bg-slate-800 border border-slate-700 rounded-xl text-slate-400 hover:text-white hover:border-indigo-500 transition-all shadow-md active:scale-95"
+                                    >
+                                      <Pencil size={14} />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                              <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest leading-relaxed">
+                                Esta llave es necesaria para que nuevos maestros puedan crear una cuenta.
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
                         {/* QUICK MENU */}
-                        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-2 md:p-3 shadow-xl">
+                        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-2 md:p-3 shadow-md">
                           <button className="w-full flex items-center justify-between p-4 rounded-2xl text-slate-400 hover:text-white hover:bg-indigo-500/10 transition-all group">
                             <div className="flex items-center gap-3">
                               <UserCog
@@ -1350,14 +1604,17 @@ export default function App() {
                             </div>
                             <ChevronRight size={14} />
                           </button>
-                          <button className="w-full flex items-center justify-between p-4 rounded-2xl text-slate-400 hover:text-white hover:bg-emerald-500/10 transition-all group">
+                          <button 
+                            onClick={() => setShowPasswordModal(true)}
+                            className="w-full flex items-center justify-between p-4 rounded-2xl text-slate-400 hover:text-white hover:bg-cyan-500/10 transition-all group"
+                          >
                             <div className="flex items-center gap-3">
-                              <ShieldCheck
+                              <Key
                                 size={18}
-                                className="group-hover:text-emerald-400"
+                                className="group-hover:text-cyan-400"
                               />
                               <span className="text-[10px] font-black uppercase tracking-[0.2em]">
-                                Privacidad
+                                Cambiar Contraseña
                               </span>
                             </div>
                             <ChevronRight size={14} />
@@ -1378,7 +1635,7 @@ export default function App() {
 
                       <div className="lg:col-span-8 space-y-4 md:space-y-6">
                         {stats.role === "Student" && (
-                          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 shadow-2xl">
+                          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 shadow-lg">
                             <h3 className="text-xl font-black italic uppercase tracking-tight text-white mb-5 md:mb-6">
                               Bitácora de Desafíos
                             </h3>
@@ -1418,17 +1675,17 @@ export default function App() {
                         )}
 
                         {stats.role === "Teacher" && (
-                          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 shadow-2xl space-y-6 md:space-y-8">
+                          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 shadow-lg space-y-6 md:space-y-8">
                             <h3 className="text-xl font-black italic uppercase tracking-tight text-white mb-5 md:mb-6">
                               Administración Académica
                             </h3>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
-                              <div className="bg-indigo-600 rounded-[1.5rem] md:rounded-3xl p-6 md:p-8 text-white space-y-4 shadow-xl shadow-indigo-600/20 border-b-8 border-indigo-800">
+                              <div className="bg-indigo-600 rounded-[1.5rem] md:rounded-3xl p-6 md:p-8 text-white space-y-4 shadow-md shadow-indigo-600/20 border-b-8 border-indigo-800">
                                 <h4 className="text-[10px] font-black uppercase tracking-widest opacity-70 italic">
                                   Alumnos en Radar
                                 </h4>
                                 <p className="text-5xl md:text-6xl font-black italic leading-none">
-                                  83
+                                  {globalStudents.filter(s => stats.assignedGroups.includes(s.grade)).length}
                                 </p>
                               </div>
                               <div className="bg-slate-800 border border-slate-700 rounded-[1.5rem] md:rounded-3xl p-6 md:p-8 space-y-4 border-b-8 border-slate-950">
@@ -1436,7 +1693,7 @@ export default function App() {
                                   Misiones por Validar
                                 </h4>
                                 <p className="text-6xl font-black italic text-white leading-none">
-                                  12
+                                  {globalStudents.filter(s => stats.assignedGroups.includes(s.grade)).reduce((acc, curr) => acc + (curr.pendingTasks?.length || 0), 0)}
                                 </p>
                               </div>
                             </div>
@@ -1445,94 +1702,34 @@ export default function App() {
                                 Materias Asignadas
                               </h4>
                               <div className="flex flex-wrap gap-3">
-                                {stats.assignedSubjects.map((sid) => (
-                                  <span
-                                    key={sid}
-                                    className="px-6 py-3 bg-slate-800 border border-slate-700 rounded-2xl text-xs font-black uppercase tracking-tighter text-white"
-                                  >
-                                    {sid.replace("_", " ").toUpperCase()}
-                                  </span>
-                                ))}
+                                {stats.assignedSubjects.map((sid) => {
+                                  const baseId = sid.includes(":") ? sid.split(":")[0] : sid;
+                                  const group = sid.includes(":") ? sid.split(":")[1] : null;
+
+                                  let prettyName = baseId.replace("_", " ").toUpperCase();
+                                  for (const year in ACADEMIC_CONTENT) {
+                                    const sub = (ACADEMIC_CONTENT[year as Year] || []).find((s) => s.id === baseId);
+                                    if (sub) {
+                                      prettyName = sub.name;
+                                      break;
+                                    }
+                                  }
+
+                                  return (
+                                    <span
+                                      key={sid}
+                                      className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs font-black uppercase tracking-tight text-white mb-1"
+                                    >
+                                      {prettyName} {group ? <span className="text-cyan-400 ml-1">[{group}]</span> : ""}
+                                    </span>
+                                  );
+                                })}
                               </div>
                             </div>
                           </div>
                         )}
 
-                        {stats.role === "Admin" && (
-                          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 shadow-2xl space-y-6 md:space-y-8">
-                            <div className="flex items-center justify-between">
-                              <h3 className="text-xl font-black italic uppercase tracking-tight text-white flex items-center gap-3">
-                                <ShieldCheck
-                                  className="text-rose-400"
-                                  size={26}
-                                />{" "}
-                                Protocolo Maestro
-                              </h3>
-                              <div className="flex gap-2">
-                                <span className="px-3 py-1 bg-rose-500/10 text-rose-400 text-[8px] font-black uppercase tracking-widest rounded-lg border border-rose-500/20">
-                                  MASTER_ACCESS
-                                </span>
-                              </div>
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                              {[
-                                {
-                                  label: "Usuarios",
-                                  val: "412",
-                                  color: "text-white",
-                                },
-                                {
-                                  label: "Carga",
-                                  val: "12%",
-                                  color: "text-emerald-400",
-                                },
-                                {
-                                  label: "Uptime",
-                                  val: "99.9%",
-                                  color: "text-indigo-400",
-                                },
-                              ].map((st) => (
-                                <div
-                                  key={st.label}
-                                  className="bg-slate-800 border border-slate-700 p-5 md:p-6 rounded-2xl md:rounded-[2rem]"
-                                >
-                                  <h4 className="text-[8px] font-black uppercase tracking-widest text-slate-500 mb-2">
-                                    {st.label}
-                                  </h4>
-                                  <p
-                                    className={cn(
-                                      "text-3xl font-black italic",
-                                      st.color,
-                                    )}
-                                  >
-                                    {st.val}
-                                  </p>
-                                </div>
-                              ))}
-                            </div>
-                            <div className="pt-8 border-t border-slate-800">
-                              <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-6 italic">
-                                Privilegios Inyectados
-                              </h4>
-                              <div className="flex flex-wrap gap-2">
-                                {[
-                                  "Edit_All_Cards",
-                                  "Assign_Teachers",
-                                  "Store_Override",
-                                  "Global_Broadcast",
-                                  "Database_Wipe_Safe",
-                                ].map((p) => (
-                                  <span
-                                    key={p}
-                                    className="px-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-[8px] font-black uppercase tracking-widest text-slate-400 hover:text-indigo-400 hover:border-indigo-500/30 transition-all cursor-default"
-                                  >
-                                    {p}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        )}
+
                       </div>
                     </div>
                   </motion.div>
@@ -1547,52 +1744,85 @@ export default function App() {
                     className="space-y-8 pb-32"
                   >
                     <div className="space-y-8">
-                      <div className="flex flex-col lg:flex-row items-start lg:items-end justify-between gap-6 text-left">
-                        <div className="px-2">
-                          <h2 className="text-3xl sm:text-5xl font-black italic uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-slate-100 to-slate-500 pb-2 pr-2">
+                      <div className="flex flex-col lg:flex-row items-center lg:items-end justify-between gap-4 lg:gap-6 text-center lg:text-left">
+                        <div className="px-1 lg:px-0">
+                          <h2 className="text-3xl lg:text-5xl font-black italic uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-slate-100 to-slate-500 pb-1 pr-2">
                             {stats.role === "Admin"
-                              ? "Explorador Global"
-                              : "Desafíos Académicos"}
+                              ? "Asignación"
+                              : "Desafíos"}
                           </h2>
-                          <p className="text-indigo-400 font-black uppercase tracking-[0.2em] text-[9px] sm:text-[10px] mt-1">
+                          <p className="text-indigo-400 font-black uppercase tracking-[0.2em] text-xs mt-1">
                             {stats.role === "Admin"
-                              ? "Control maestro de todas las materias"
+                              ? "Control maestro de grupos"
                               : `Sincronización de Retos: Grupo ${stats.grade}`}
                           </p>
                         </div>
 
                         {stats.role === "Admin" && (
-                          <div className="flex bg-slate-900/50 backdrop-blur-md p-1.5 rounded-xl border border-slate-800 gap-1 overflow-x-auto no-scrollbar max-w-full">
-                            {(["1A", "1B", "1C", "1D", "2A", "2B", "2C", "2D", "3A", "3B", "3C", "3D"] as Grade[]).map((g) => (
-                              <button
-                                key={g}
-                                onClick={() => {
-                                  setStats((prev) => ({ ...prev, grade: g }));
-                                  setSelectedSubject(null);
-                                  setSelectedTopic(null);
-                                  setSelectedTask(null);
-                                }}
-                                className={cn(
-                                  "px-6 py-2.5 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all whitespace-nowrap",
-                                  stats.grade[0] === g[0]
-                                    ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/20"
-                                    : "text-slate-500 hover:text-slate-300",
-                                )}
-                              >
-                                {g[0]} Año
-                              </button>
-                            ))}
+                          <div className="flex flex-col gap-2 w-full lg:w-auto items-center lg:items-end">
+                            {/* Selector de Año */}
+                            <div className="flex bg-slate-900/50 p-1 rounded-2xl border border-slate-800 gap-1 w-full lg:w-96">
+                              {(["1", "2", "3"] as Year[]).map((y) => (
+                                <button
+                                  key={y}
+                                  onClick={() => {
+                                    if (stats.grade?.[0] !== y) {
+                                      setStats((prev) => ({ ...prev, grade: (y + "A") as Grade }));
+                                      setSelectedSubject(null);
+                                      setSelectedTopic(null);
+                                      setSelectedTask(null);
+                                    }
+                                  }}
+                                  className={cn(
+                                    "flex-1 py-2 rounded-xl font-black uppercase tracking-widest text-[9px] lg:text-[10px] transition-all flex items-center justify-center gap-2",
+                                    (stats.grade?.[0] || "1") === y
+                                      ? "bg-cyan-600 text-white shadow-lg shadow-cyan-500/20"
+                                      : "text-slate-500 hover:text-slate-300 hover:bg-slate-800/30",
+                                  )}
+                                >
+                                  <GraduationCap size={14} className={cn((stats.grade?.[0] || "1") === y ? "text-white" : "text-slate-600")} />
+                                  <span>{y}º Año</span>
+                                </button>
+                              ))}
+                            </div>
+                            
+                            {/* Selector de Grupo */}
+                            <div className="flex bg-slate-900/30 p-1 rounded-2xl border border-slate-800/50 gap-1 w-full lg:w-96">
+                              {["A", "B", "C", "D"].map((letter) => {
+                                const currentYear = stats.grade?.[0] || "1";
+                                const fullGrade = (currentYear + letter) as Grade;
+                                return (
+                                  <button
+                                    key={fullGrade}
+                                    onClick={() => {
+                                      setStats((prev) => ({ ...prev, grade: fullGrade }));
+                                      setSelectedSubject(null);
+                                      setSelectedTopic(null);
+                                      setSelectedTask(null);
+                                    }}
+                                    className={cn(
+                                      "flex-1 py-2.5 rounded-xl font-black uppercase tracking-widest text-xs transition-all flex items-center justify-center",
+                                      stats.grade === fullGrade
+                                        ? "bg-slate-700 text-white shadow-inner border border-slate-600"
+                                        : "text-slate-600 hover:text-slate-400 hover:bg-slate-800/50",
+                                    )}
+                                  >
+                                    <span>{letter}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
                         )}
 
                         {stats.role === "Teacher" && (
                           <button
                             onClick={() =>
-                              alert(
+                              toast.info(
                                 "Módulo de creación de desafíos: ¡Próximamente!",
                               )
                             }
-                            className="flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-2xl text-white font-black uppercase tracking-widest text-xs transition-all shadow-lg active:scale-95"
+                            className="flex items-center gap-2 px-6 py-3 bg-cyan-600 hover:bg-cyan-500 rounded-2xl text-white font-black uppercase tracking-widest text-xs transition-all shadow-lg active:scale-95"
                           >
                             <Plus size={18} /> Nuevo Desafío
                           </button>
@@ -1604,14 +1834,23 @@ export default function App() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                           {Object.entries(ACADEMIC_CONTENT).flatMap(
                             ([grade, subjects]) =>
-                              subjects
+                              (subjects || [])
                                 .filter((s) => {
-                                  if (stats.role === "Admin") return true;
-                                  if (stats.role === "Teacher")
-                                    return stats.assignedSubjects.includes(
-                                      s.id,
-                                    );
-                                  return stats.grade[0] === grade;
+                                  if (stats.role === "Admin") {
+                                    return (stats.grade?.[0] || "1") === grade;
+                                  }
+                                  if (stats.role === "Teacher") {
+                                    const hasIntegrationThisYear = stats.assignedSubjects.some((s) => {
+                                      const baseId = s.includes(":") ? s.split(":")[0] : s;
+                                      return baseId === `int_cur_${grade}`;
+                                    });
+                                    if (hasIntegrationThisYear) return true;
+                                    return stats.assignedSubjects.some((subj) => {
+                                      const baseId = subj.includes(":") ? subj.split(":")[0] : subj;
+                                      return baseId === s.id;
+                                    });
+                                  }
+                                  return (stats.grade?.[0] || "1") === grade;
                                 })
                                 .map((subject) => (
                                   <motion.button
@@ -1621,7 +1860,7 @@ export default function App() {
                                     onClick={() =>
                                       setSelectedSubject(subject.id)
                                     }
-                                    className="bg-slate-900 border border-slate-800 p-6 rounded-[2rem] text-left hover:border-indigo-500/50 transition-all group relative overflow-hidden shadow-xl"
+                                    className="bg-slate-900 border border-slate-800 p-6 rounded-[2rem] text-left hover:border-indigo-500/50 transition-all group relative overflow-hidden shadow-md"
                                   >
                                     <div className="absolute -top-10 -right-10 opacity-5 text-indigo-500 group-hover:scale-110 group-hover:-rotate-12 transition-all duration-700">
                                       <GraduationCap size={240} />
@@ -1640,7 +1879,7 @@ export default function App() {
                                       <h3 className="text-2xl font-black italic uppercase tracking-tight text-white mb-2">
                                         {subject.name}
                                       </h3>
-                                      <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em]">
+                                      <p className="text-slate-400 text-xs font-black uppercase tracking-[0.2em]">
                                         {subject.topics.length} Módulos de
                                         Entrenamiento
                                       </p>
@@ -1665,17 +1904,23 @@ export default function App() {
                             <h3 className="text-3xl font-black italic uppercase tracking-tighter text-slate-100 mb-8">
                               Sectores:{" "}
                               <span className="text-indigo-400">
-                                {
-                                  ACADEMIC_CONTENT[stats.grade[0] as Year].find(
-                                    (s) => s.id === selectedSubject,
-                                  )?.name
-                                }
+                                {(() => {
+                                  for (const year in ACADEMIC_CONTENT) {
+                                    const sub = (ACADEMIC_CONTENT[year as Year] || []).find(s => s.id === selectedSubject);
+                                    if (sub) return sub.name;
+                                  }
+                                  return "Materia no encontrada";
+                                })()}
                               </span>
                             </h3>
                             <div className="grid grid-cols-1 gap-4">
-                              {ACADEMIC_CONTENT[stats.grade[0] as Year]
-                                .find((s) => s.id === selectedSubject)
-                                ?.topics.map((topic) => (
+                              {(() => {
+                                let subject = null;
+                                for (const year in ACADEMIC_CONTENT) {
+                                  subject = (ACADEMIC_CONTENT[year as Year] || []).find(s => s.id === selectedSubject);
+                                  if (subject) break;
+                                }
+                                return subject?.topics.map((topic) => (
                                   <button
                                     key={topic.id}
                                     onClick={() => setSelectedTopic(topic.id)}
@@ -1697,7 +1942,8 @@ export default function App() {
                                     </div>
                                     <ChevronRight className="text-slate-700 group-hover:text-indigo-500 transition-colors" />
                                   </button>
-                                ))}
+                                ));
+                              })()}
                             </div>
                           </div>
                         </div>
@@ -1717,21 +1963,32 @@ export default function App() {
                           <div className="space-y-6">
                             <h3 className="text-3xl font-black italic uppercase tracking-tighter text-slate-100 flex items-center gap-4">
                               <Zap className="text-indigo-400" size={32} />
-                              {
-                                ACADEMIC_CONTENT[stats.grade[0] as Year]
-                                  .find((s) => s.id === selectedSubject)
-                                  ?.topics.find((t) => t.id === selectedTopic)
-                                  ?.name
-                              }
+                              {(() => {
+                                for (const year in ACADEMIC_CONTENT) {
+                                  const sub = (ACADEMIC_CONTENT[year as Year] || []).find(s => s.id === selectedSubject);
+                                  if (sub) {
+                                    const topic = sub.topics.find((t) => t.id === selectedTopic);
+                                    if (topic) return topic.name;
+                                  }
+                                }
+                                return "Tema no encontrado";
+                              })()}
                             </h3>
 
                             <div className="grid grid-cols-1 gap-6">
-                              {ACADEMIC_CONTENT[stats.grade[0] as Year]
-                                .find((s) => s.id === selectedSubject)
-                                ?.topics.find((t) => t.id === selectedTopic)
-                                ?.tasks.map((task) => {
+                              {(() => {
+                                let topic = null;
+                                for (const year in ACADEMIC_CONTENT) {
+                                  const sub = (ACADEMIC_CONTENT[year as Year] || []).find(s => s.id === selectedSubject);
+                                  if (sub) {
+                                    topic = sub.topics.find((t) => t.id === selectedTopic);
+                                    if (topic) break;
+                                  }
+                                }
+                                return topic?.tasks.map((task) => {
                                   const isCompleted =
                                     stats.completedTasks.includes(task.id);
+                                  const isPending = stats.pendingTasks?.includes(task.id) || false;
                                   const isTaskActive = selectedTask === task.id;
                                   const diffConfig = {
                                     Easy: {
@@ -1759,10 +2016,10 @@ export default function App() {
                                     <div
                                       key={task.id}
                                       className={cn(
-                                        "bg-slate-900 border p-6 rounded-[2.5rem] transition-all relative overflow-hidden shadow-xl",
+                                        "bg-slate-900 border p-6 rounded-[2.5rem] transition-all relative overflow-hidden shadow-md",
                                         isCompleted
                                           ? "border-emerald-500/20 opacity-60"
-                                          : "border-slate-800 hover:border-indigo-500/30",
+                                          : isPending ? "border-amber-500/40 opacity-80" : "border-slate-800 hover:border-indigo-500/30",
                                         isTaskActive &&
                                           "border-indigo-500 ring-1 ring-indigo-500/50",
                                       )}
@@ -1772,7 +2029,7 @@ export default function App() {
                                           "absolute top-0 right-0 w-32 h-32 bg-gradient-to-br opacity-5 pointer-events-none rotate-45 transform translate-x-12 -translate-y-12",
                                           isCompleted
                                             ? "from-emerald-500 to-transparent"
-                                            : "from-indigo-500 to-transparent",
+                                            : isPending ? "from-amber-500 to-transparent" : "from-indigo-500 to-transparent",
                                         )}
                                       />
 
@@ -1781,7 +2038,7 @@ export default function App() {
                                           <div className="flex flex-wrap items-center gap-4">
                                             <span
                                               className={cn(
-                                                "px-4 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border shadow-sm",
+                                                "px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest border shadow-sm",
                                                 config.color,
                                                 config.border,
                                                 config.bg,
@@ -1790,9 +2047,15 @@ export default function App() {
                                               {config.label}
                                             </span>
                                             {isCompleted && (
-                                              <span className="bg-emerald-500/20 text-emerald-400 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-emerald-500/30 flex items-center gap-1.5">
-                                                <CheckCircle2 size={10} />{" "}
+                                              <span className="bg-emerald-500/20 text-emerald-400 px-3 py-1.5 rounded-full text-xs font-black uppercase tracking-widest border border-emerald-500/30 flex items-center gap-1.5">
+                                                <CheckCircle2 size={12} />{" "}
                                                 Completado
+                                              </span>
+                                            )}
+                                            {isPending && (
+                                              <span className="bg-amber-500/20 text-amber-400 px-3 py-1.5 rounded-full text-xs font-black uppercase tracking-widest border border-amber-500/30 flex items-center gap-1.5">
+                                                <Flame size={12} />{" "}
+                                                En Revisión
                                               </span>
                                             )}
                                           </div>
@@ -1845,51 +2108,43 @@ export default function App() {
                                           </div>
                                         </div>
 
-                                        {!isCompleted && (
+                                        {!isCompleted && !isPending && (
                                           <div className="flex flex-col gap-3">
                                             {!isTaskActive ? (
                                               <button
                                                 onClick={() => {
-                                                  // Check daily limits
-                                                  if (stats.dailyLimits) {
-                                                    if (task.difficulty === 'Easy' && stats.dailyLimits.easyCompleted >= 3) {
-                                                      alert('Has alcanzado el límite diario de 3 desafíos básicos. ¡Vuelve mañana!');
+                                                                   if (stats.dailyLimits) {
+                                                    if (task.difficulty === 'Easy' && (stats.dailyLimits.easyCompleted || 0) >= 4) {
+                                                      toast.warning('Has alcanzado el límite diario de 4 desafíos básicos. ¡Vuelve mañana!');
                                                       return;
                                                     }
-                                                    if (task.difficulty === 'Medium' && stats.dailyLimits.mediumCompleted >= 2) {
-                                                      alert('Has alcanzado el límite diario de 2 desafíos intermedios. ¡Vuelve mañana!');
+                                                    if (task.difficulty === 'Medium' && (stats.dailyLimits.mediumCompleted || 0) >= 2) {
+                                                      toast.warning('Has alcanzado el límite diario de 2 desafíos intermedios. ¡Vuelve mañana!');
                                                       return;
                                                     }
-                                                    if (task.difficulty === 'Hard' && stats.dailyLimits.hardCompleted >= 1) {
-                                                      alert('Has alcanzado el límite diario de 1 desafío difícil. ¡Vuelve mañana!');
+                                                    if (task.difficulty === 'Hard' && (stats.dailyLimits.hardCompleted || 0) >= 1) {
+                                                      toast.warning('Has alcanzado el límite diario de 1 desafío difícil. ¡Vuelve mañana!');
                                                       return;
                                                     }
                                                   }
 
                                                   setSelectedTask(task.id);
                                                   if (task.isAIQuiz) {
-                                                    const subjectName =
-                                                      ACADEMIC_CONTENT[
-                                                        stats.grade[0] as Year
-                                                      ].find(
-                                                        (s) =>
-                                                          s.id ===
-                                                          selectedSubject,
-                                                      )?.name || "";
-                                                    const topicName =
-                                                      ACADEMIC_CONTENT[
-                                                        stats.grade[0] as Year
-                                                      ]
-                                                        .find(
-                                                          (s) =>
-                                                            s.id ===
-                                                            selectedSubject,
-                                                        )
-                                                        ?.topics.find(
-                                                          (t) =>
-                                                            t.id ===
-                                                            selectedTopic,
-                                                        )?.name || "";
+                                                    let subjectName = "";
+                                                    let topicName = "";
+                                                    
+                                                    for (const year in ACADEMIC_CONTENT) {
+                                                      const sub = (ACADEMIC_CONTENT[year as Year] || []).find(s => s.id === selectedSubject);
+                                                      if (sub) {
+                                                        subjectName = sub.name;
+                                                        const topic = sub.topics.find(t => t.id === selectedTopic);
+                                                        if (topic) {
+                                                          topicName = topic.name;
+                                                          break;
+                                                        }
+                                                      }
+                                                    }
+                                                    
                                                     generateAIQuiz(
                                                       subjectName,
                                                       topicName,
@@ -1935,7 +2190,7 @@ export default function App() {
                                                                       i ===
                                                                       aiQuiz.answer
                                                                     ) {
-                                                                      alert(
+                                                                      toast.success(
                                                                         "¡Correcto! Desafío completado por IA.",
                                                                       );
                                                                       completeTask(
@@ -1948,7 +2203,7 @@ export default function App() {
                                                                         null,
                                                                       );
                                                                     } else {
-                                                                      alert(
+                                                                      toast.error(
                                                                         "Intento fallido. Analiza de nuevo.",
                                                                       );
                                                                     }
@@ -1973,7 +2228,7 @@ export default function App() {
                                                                   i ===
                                                                   task.quizAnswer
                                                                 ) {
-                                                                  alert(
+                                                                  toast.success(
                                                                     "¡Correcto! Desafío completado.",
                                                                   );
                                                                   completeTask(
@@ -1983,7 +2238,7 @@ export default function App() {
                                                                     null,
                                                                   );
                                                                 } else {
-                                                                  alert(
+                                                                  toast.error(
                                                                     "Intento fallido. Analiza de nuevo.",
                                                                   );
                                                                 }
@@ -2012,16 +2267,16 @@ export default function App() {
                                                           e.target.files
                                                             .length > 0
                                                         ) {
-                                                          alert(
+                                                          toast.success(
                                                             "Evidencia subida correctamente. El profesor validará tu desafío.",
                                                           );
-                                                          completeTask(task);
+                                                          submitTaskForReview(task);
                                                           setSelectedTask(null);
                                                         }
                                                       };
                                                       input.click();
                                                     }}
-                                                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-5 rounded-2xl font-black uppercase tracking-widest transition-all shadow-xl shadow-indigo-500/20 flex items-center justify-center gap-3 border-b-4 border-indigo-800"
+                                                    className="bg-cyan-600 hover:bg-cyan-500 text-white px-8 py-5 rounded-2xl font-black uppercase tracking-widest transition-all shadow-md shadow-cyan-500/20 flex items-center justify-center gap-3 border-b-4 border-cyan-800"
                                                   >
                                                     <FileUp size={20} /> Subir
                                                     Evidencia
@@ -2043,7 +2298,8 @@ export default function App() {
                                       </div>
                                     </div>
                                   );
-                                })}
+                                });
+                              })()}
                             </div>
                           </div>
                         </div>
@@ -2073,11 +2329,11 @@ export default function App() {
                             </p>
                           </div>
                           
-                          <div className="flex bg-slate-900/50 backdrop-blur-md p-1.5 rounded-xl border border-slate-800 gap-1 w-full md:w-auto">
+                          <div className="flex bg-slate-900/50 p-1 rounded-xl border border-slate-800 gap-1 w-full md:w-auto">
                             <button
                                onClick={() => setAdminDashboardTab("stats")}
                                className={cn(
-                                 "flex-1 md:flex-none px-6 py-3 rounded-lg text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all",
+                                 "flex-1 md:flex-none px-3 sm:px-4 md:px-6 py-2.5 sm:py-3 rounded-lg text-[9px] sm:text-xs font-black uppercase tracking-widest transition-all",
                                  adminDashboardTab === "stats"
                                    ? "bg-slate-800 text-white shadow-md shadow-black/20"
                                    : "text-slate-500 hover:text-slate-300 hover:bg-slate-800/30",
@@ -2088,7 +2344,7 @@ export default function App() {
                              <button
                                onClick={() => setAdminDashboardTab("teachers")}
                                className={cn(
-                                 "flex-1 md:flex-none px-6 py-3 rounded-lg text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all",
+                                 "flex-1 md:flex-none px-3 sm:px-4 md:px-6 py-2.5 sm:py-3 rounded-lg text-[9px] sm:text-xs font-black uppercase tracking-widest transition-all",
                                  adminDashboardTab === "teachers"
                                    ? "bg-slate-800 text-white shadow-md shadow-black/20"
                                    : "text-slate-500 hover:text-slate-300 hover:bg-slate-800/30",
@@ -2099,7 +2355,7 @@ export default function App() {
                              <button
                                onClick={() => setAdminDashboardTab("students")}
                                className={cn(
-                                 "flex-1 md:flex-none px-6 py-3 rounded-lg text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all",
+                                 "flex-1 md:flex-none px-3 sm:px-4 md:px-6 py-2.5 sm:py-3 rounded-lg text-[9px] sm:text-xs font-black uppercase tracking-widest transition-all",
                                  adminDashboardTab === "students"
                                    ? "bg-slate-800 text-white shadow-md shadow-black/20"
                                    : "text-slate-500 hover:text-slate-300 hover:bg-slate-800/30",
@@ -2120,7 +2376,7 @@ export default function App() {
                               },
                               {
                                 label: "Matrícula Activa",
-                                val: MOCK_STUDENTS.length.toString(),
+                                val: globalStudents.length.toString(),
                                 icon: <Users size={24} className="text-emerald-400" />
                               },
                               {
@@ -2130,18 +2386,78 @@ export default function App() {
                               },
                               {
                                 label: "Misiones Resueltas",
-                                val: MOCK_STUDENTS.reduce((acc, curr) => acc + curr.completedTasks.length, 0).toString(),
+                                val: globalStudents.reduce((acc, curr) => acc + curr.completedTasks.length, 0).toString(),
                                 icon: <TrendingUp size={24} className="text-amber-400" />
+                              },
+                              {
+                                label: "Llave de Docente",
+                                val: masterTeacherKey,
+                                icon: <Lock size={24} className="text-violet-400" />,
+                                isEditable: true,
                               }
                             ].map((stat, i) => (
-                              <div key={i} className="bg-slate-900 border border-slate-800 p-6 rounded-[2rem] flex flex-col gap-4 hover:border-slate-700 transition-all shadow-lg">
+                              <div key={i} className="bg-slate-900 border border-slate-800 p-6 rounded-[2rem] flex flex-col gap-4 hover:border-slate-700 transition-all shadow-lg relative group overflow-hidden">
+                                <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-indigo-500/5 to-transparent rounded-bl-[4rem]"></div>
                                 <div className="flex items-center gap-4">
-                                  <div className="w-12 h-12 bg-slate-800/50 rounded-2xl flex items-center justify-center">
+                                  <div className="w-12 h-12 bg-slate-800/50 rounded-2xl flex items-center justify-center relative z-10">
                                     {stat.icon}
                                   </div>
+                                  {(stat as any).isEditable && (
+                                    <div className="absolute top-4 right-4 flex gap-2">
+                                      {isEditingMasterKey ? (
+                                        <div className="flex items-center gap-1">
+                                          <button 
+                                            onClick={() => {
+                                              if (tempMasterKey.trim()) {
+                                                const newKey = tempMasterKey.trim();
+                                                setMasterTeacherKey(newKey);
+                                                setIsEditingMasterKey(false);
+                                                // Persist to Supabase
+                                                supabaseService.setGlobalMasterKey(newKey).then(() => {
+                                                  toast.success("Llave actualizada globalmente.");
+                                                }).catch(() => {
+                                                  toast.success("Llave actualizada.");
+                                                });
+                                              }
+                                            }}
+                                            className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30 hover:bg-emerald-500/30 transition-all"
+                                          >
+                                            <CheckCircle2 size={12} />
+                                          </button>
+                                          <button 
+                                            onClick={() => {
+                                              setIsEditingMasterKey(false);
+                                              setTempMasterKey(masterTeacherKey);
+                                            }}
+                                            className="p-2 bg-slate-800 text-slate-400 rounded-xl border border-slate-700 hover:text-white transition-all"
+                                          >
+                                            <X size={12} />
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <button 
+                                          onClick={() => setIsEditingMasterKey(true)}
+                                          className="p-2 bg-slate-800 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity border border-slate-700 hover:text-indigo-400 shadow-sm"
+                                        >
+                                          <Pencil size={12} />
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
-                                <div>
-                                  <div className="text-3xl font-black italic text-slate-100 mb-1">{stat.val}</div>
+                                <div className="relative z-10">
+                                  {/* Value Display or Edit Input */}
+                                  {(stat as any).isEditable && isEditingMasterKey ? (
+                                    <input 
+                                      type="text"
+                                      value={tempMasterKey}
+                                      onChange={(e) => setTempMasterKey(e.target.value.toUpperCase())}
+                                      className="bg-slate-950 border border-indigo-500/50 text-indigo-400 text-xl font-black italic rounded-lg px-2 py-1 w-full outline-none ring-4 ring-indigo-500/10 mb-1"
+                                      autoFocus
+                                    />
+                                  ) : (
+                                    <div className="text-2xl font-black italic text-slate-100 mb-1 truncate">{stat.val}</div>
+                                  )}
                                   <div className="text-[9px] font-black uppercase tracking-widest text-slate-500">{stat.label}</div>
                                 </div>
                               </div>
@@ -2150,11 +2466,13 @@ export default function App() {
                         ) : adminDashboardTab === "teachers" ? (
                           <div className="space-y-6">
                             <div className="flex justify-end">
-                              <button className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-2xl text-white font-black uppercase tracking-widest text-[10px] md:text-xs transition-all shadow-lg shadow-indigo-600/20 active:scale-95">
+                              <button 
+                                onClick={() => setShowCreateUserModal({ isOpen: true, role: "Teacher" })}
+                                className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-cyan-600 hover:bg-cyan-500 rounded-2xl text-white font-black uppercase tracking-widest text-[10px] md:text-xs transition-all shadow-lg shadow-cyan-600/20 active:scale-95">
                                 <Plus size={18} /> Nuevo Docente
                               </button>
                             </div>
-                            <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] overflow-hidden shadow-xl">
+                            <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] overflow-hidden shadow-md">
                           <div className="px-6 md:px-8 py-5 border-b border-slate-800 flex justify-between items-center bg-slate-800/30">
                             <h4 className="text-xs font-black uppercase tracking-widest text-white italic">
                               Plantilla Docente
@@ -2162,7 +2480,7 @@ export default function App() {
                           </div>
                           
                           {/* Desktop Table View */}
-                          <div className="hidden md:block overflow-x-auto">
+                          <div className="hidden md:block overflow-x-auto transform-gpu">
                             <table className="w-full text-left">
                               <thead className="bg-slate-800/50 border-b border-slate-700">
                                 <tr>
@@ -2202,33 +2520,33 @@ export default function App() {
                                       </div>
                                     </td>
                                     <td className="px-8 py-6">
-                                      <div className="flex flex-wrap gap-2">
-                                        {teacher.subjects.length > 0 ? (
-                                          teacher.subjects.map((sid) => (
-                                            <div key={sid} className="flex flex-col gap-1">
-                                              <span className="px-2 py-0.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded text-[9px] font-black uppercase">
-                                                {sid.split("_")[0]} ({sid.split("_")[1]} Año)
-                                              </span>
-                                            </div>
-                                          ))
-                                        ) : (
-                                          <span className="text-[9px] font-black text-slate-600 uppercase italic">
-                                            Sin asignar
-                                          </span>
-                                        )}
+                                      <div className="flex flex-wrap gap-1 items-center">
+                                        {renderCompactSubjects(teacher.subjects)}
                                       </div>
                                     </td>
                                     <td className="px-8 py-6 text-center">
-                                      <span
-                                        className={cn(
-                                          "px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border",
-                                          teacher.status === "Active"
-                                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                                            : "bg-slate-800 text-slate-500 border-slate-700",
-                                        )}
-                                      >
-                                        {teacher.status === "Active" ? "Activo" : "Licencia"}
-                                      </span>
+                                      {(() => {
+                                        const isOnline = teacher.lastActive && (new Date().getTime() - new Date(teacher.lastActive).getTime() < 300000);
+                                        return (
+                                          <div className="flex flex-col items-center gap-1">
+                                            <span
+                                              className={cn(
+                                                "px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border",
+                                                isOnline
+                                                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-sm"
+                                                  : "bg-slate-800 text-slate-500 border-slate-700",
+                                              )}
+                                            >
+                                              {isOnline ? "En Línea" : "Desconectado"}
+                                            </span>
+                                            {teacher.lastActive && !isOnline && (
+                                              <span className="text-[8px] text-slate-600 font-bold uppercase truncate max-w-[80px]">
+                                                {new Date(teacher.lastActive).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                              </span>
+                                            )}
+                                          </div>
+                                        );
+                                      })()}
                                     </td>
                                     <td className="px-8 py-6 text-right">
                                       <div className="flex items-center justify-end gap-2">
@@ -2236,19 +2554,22 @@ export default function App() {
                                           onClick={() => {
                                             const newName = prompt('Nuevo nombre:', teacher.name);
                                             if (newName && newName.trim()) {
-                                              setTeachers(prev => prev.map(t => t.id === teacher.id ? {...t, name: newName.trim()} : t));
+                                              supabaseService.updateUserStats(teacher.id, { username: newName.trim() }).then(() => {
+                                                loadUsers();
+                                                toast.success("Nombre actualizado con éxito.");
+                                              }).catch(err => {
+                                                console.error(err);
+                                                toast.error("Error al actualizar nombre.");
+                                              });
                                             }
                                           }}
-                                          className="text-indigo-400 hover:text-indigo-300 font-bold p-2 bg-indigo-500/10 rounded-full transition-all border border-indigo-500/20"
+                                          className="text-cyan-400 hover:text-cyan-300 font-bold p-2 bg-cyan-500/10 rounded-full transition-all border border-cyan-500/20"
                                         >
                                           <Pencil size={14} />
                                         </button>
                                         <button
                                           onClick={() => {
-                                            const confirm = window.confirm(`¿Borrar al docente ${teacher.name}?`);
-                                            if (confirm) {
-                                              setTeachers(prev => prev.filter(t => t.id !== teacher.id));
-                                            }
+                                            setUserToDelete({ id: teacher.id, name: teacher.name, role: "Docente" });
                                           }}
                                           className="text-rose-400 hover:text-rose-300 font-bold p-2 bg-rose-500/10 rounded-full transition-all border border-rose-500/20"
                                         >
@@ -2264,7 +2585,7 @@ export default function App() {
                                               activeYear: "1",
                                             })
                                           }
-                                          className="inline-flex items-center justify-end gap-2 px-4 py-2 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-indigo-400 transition-colors border border-transparent hover:border-slate-700"
+                                          className="inline-flex items-center justify-end gap-2 px-4 py-2 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-cyan-400 transition-colors border border-transparent hover:border-slate-700"
                                         >
                                           <UserCog size={14} />{" "}
                                           <span className="text-[10px] font-black uppercase tracking-widest hidden lg:inline">
@@ -2291,36 +2612,35 @@ export default function App() {
                                     <h4 className="font-bold text-slate-100 truncate">{teacher.name}</h4>
                                     <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-0.5">{teacher.students} Alumnos</p>
                                   </div>
-                                  <span
-                                        className={cn(
-                                          "px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-widest border shrink-0",
-                                          teacher.status === "Active"
-                                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                                            : "bg-slate-800 text-slate-500 border-slate-700",
-                                        )}
-                                      >
-                                        {teacher.status === "Active" ? "Activo" : "Licencia"}
-                                  </span>
+                                  <div className="flex flex-col items-end gap-1">
+                                    {(() => {
+                                        const isOnline = teacher.lastActive && (new Date().getTime() - new Date(teacher.lastActive).getTime() < 300000);
+                                        return (
+                                          <div className="flex items-center gap-1.5">
+                                            <div className={cn(
+                                              "w-1.5 h-1.5 rounded-full",
+                                              isOnline ? "bg-emerald-500 animate-pulse" : "bg-slate-700"
+                                            )} />
+                                            <span className="text-[8px] font-black uppercase text-slate-500 whitespace-nowrap">
+                                              {isOnline ? "En Línea" : "Offline"}
+                                            </span>
+                                          </div>
+                                        );
+                                      })()}
+                                  </div>
                                 </div>
                                 <div className="flex flex-wrap gap-1.5 pl-15">
-                                    {teacher.subjects.length > 0 ? (
-                                          teacher.subjects.map((sid) => (
-                                              <span key={sid} className="px-2 py-1 flex items-center justify-center bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded text-[9px] font-black uppercase">
-                                                {sid.split("_")[0]} ({sid.split("_")[1]} Año)
-                                              </span>
-                                          ))
-                                        ) : (
-                                          <span className="text-[9px] font-black text-slate-600 uppercase italic">
-                                            Sin asignar materias
-                                          </span>
-                                        )}
+                                   {renderCompactSubjects(teacher.subjects)}
                                 </div>
                                 <div className="flex justify-end pt-2 border-t border-slate-800/50 mt-2 gap-2">
                                   <button
                                     onClick={() => {
                                       const newName = prompt('Nuevo nombre:', teacher.name);
                                       if (newName && newName.trim()) {
-                                        setTeachers(prev => prev.map(t => t.id === teacher.id ? {...t, name: newName.trim()} : t));
+                                        supabaseService.updateUserStats(teacher.id, { username: newName.trim() }).then(() => {
+                                          loadUsers();
+                                          toast.success("Nombre actualizado.");
+                                        }).catch(console.error);
                                       }
                                     }}
                                     className="p-3 bg-indigo-500/10 text-indigo-400 rounded-xl border border-indigo-500/20"
@@ -2329,10 +2649,7 @@ export default function App() {
                                   </button>
                                   <button
                                     onClick={() => {
-                                      const confirm = window.confirm(`¿Borrar al docente ${teacher.name}?`);
-                                      if (confirm) {
-                                        setTeachers(prev => prev.filter(t => t.id !== teacher.id));
-                                      }
+                                      setUserToDelete({ id: teacher.id, name: teacher.name, role: "Docente" });
                                     }}
                                     className="p-3 bg-rose-500/10 text-rose-400 rounded-xl border border-rose-500/20"
                                   >
@@ -2348,7 +2665,7 @@ export default function App() {
                                             activeYear: "1",
                                           })
                                         }
-                                        className="flex-1 sm:flex-none w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-3 bg-slate-800 rounded-xl text-slate-300 transition-colors border border-slate-700"
+                                        className="flex-1 sm:flex-none w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-3 bg-cyan-600/10 hover:bg-cyan-600/20 rounded-xl text-cyan-400 transition-colors border border-cyan-500/30"
                                       >
                                         <UserCog size={14} />{" "}
                                         <span className="text-[10px] font-black uppercase tracking-widest">
@@ -2363,12 +2680,20 @@ export default function App() {
                           </div>
                         ) : (
                           <div className="space-y-6">
-                            <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] overflow-hidden shadow-xl">
+                            <div className="flex justify-end">
+                              <button 
+                                onClick={() => setShowCreateUserModal({ isOpen: true, role: "Student" })}
+                                className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-cyan-600 hover:bg-cyan-500 rounded-2xl text-white font-black uppercase tracking-widest text-[10px] md:text-xs transition-all shadow-lg shadow-cyan-600/20 active:scale-95">
+                                <Plus size={18} /> Nuevo Alumno
+                              </button>
+                            </div>
+                            <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] overflow-hidden shadow-md">
                                <div className="px-6 md:px-8 py-5 border-b border-slate-800 flex justify-between items-center bg-slate-800/30">
                                    <h4 className="text-xs font-black uppercase tracking-widest text-white italic">Listado de Alumnos</h4>
                                </div>
-                               <div className="overflow-x-auto">
-                                   <table className="w-full text-left">
+                               <div className="overflow-x-auto transform-gpu pb-2">
+                                   {/* Desktop Table View */}
+                                   <table className="w-full text-left hidden md:table">
                                       <thead className="bg-slate-800/50 border-b border-slate-700">
                                         <tr>
                                           <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Alumno</th>
@@ -2379,41 +2704,62 @@ export default function App() {
                                       </thead>
                                       <tbody className="divide-y divide-slate-800">
                                           {allStudents.map(student => (
-                                              <tr key={student.username} className="hover:bg-slate-800/30 transition-colors">
-                                                 <td className="px-8 py-6 text-sm font-bold text-slate-200">{student.username}</td>
+                                              <tr key={student.username} className="hover:bg-slate-800/30 transition-colors group">
+                                                 <td className="px-8 py-6">
+                                                    <div className="flex items-center gap-3">
+                                                      {(() => {
+                                                         const isOnline = student.lastActive && (new Date().getTime() - new Date(student.lastActive).getTime() < 300000);
+                                                         return (
+                                                           <div className={cn(
+                                                             "w-2 h-2 rounded-full shrink-0",
+                                                             isOnline ? "bg-emerald-500 animate-pulse" : "bg-slate-700"
+                                                           )} />
+                                                         );
+                                                      })()}
+                                                      <span className="text-sm font-bold text-slate-200">{student.username}</span>
+                                                    </div>
+                                                 </td>
                                                  <td className="px-8 py-6 text-sm text-indigo-400 font-bold uppercase">{student.grade}</td>
                                                  <td className="px-8 py-6 text-sm text-amber-500 font-black flex items-center gap-1.5"><Coins size={14} className="text-amber-500"/> {student.tokens}</td>
                                                  <td className="px-8 py-6 text-right">
                                                    <div className="flex items-center justify-end gap-2">
+                                                       <button
+                                                          onClick={() => {
+                                                             const action = prompt(`Editar datos de ${student.username}:\n1. Editar Nombre\n2. Editar Grupo\n3. Editar Tokens\nIngresa 1, 2 o 3:`);
+                                                             if (action === '1') {
+                                                                const newName = prompt('Nuevo nombre:', student.username);
+                                                                if (newName && newName.trim() && student.id) {
+                                                                   supabaseService.updateUserStats(student.id, { username: newName.trim() }).then(() => {
+                                                                      loadUsers();
+                                                                      toast.success("Nombre actualizado.");
+                                                                   }).catch(console.error);
+                                                                }
+                                                             } else if (action === '2') {
+                                                                const newGrp = prompt('Nuevo grupo (ej. 2A):', student.grade);
+                                                                if (newGrp && newGrp.trim() && student.id) {
+                                                                   supabaseService.updateUserStats(student.id, { grade: newGrp.trim() as any }).then(() => {
+                                                                      loadUsers();
+                                                                      toast.success("Grupo actualizado.");
+                                                                   }).catch(console.error);
+                                                                }
+                                                             } else if (action === '3') {
+                                                                const newTokens = prompt('Nuevos tokens:', String(student.tokens));
+                                                                if (newTokens !== null && !isNaN(parseInt(newTokens)) && student.id) {
+                                                                   supabaseService.updateUserStats(student.id, { tokens: parseInt(newTokens) }).then(() => {
+                                                                      loadUsers();
+                                                                      toast.success("Tokens actualizados.");
+                                                                   }).catch(console.error);
+                                                                }
+                                                             }
+                                                          }}
+                                                          className="text-indigo-400 hover:text-indigo-300 font-bold p-2 bg-indigo-500/10 rounded-full transition-all border border-indigo-500/20"
+                                                       >
+                                                          <Pencil size={16} />
+                                                       </button>
                                                      <button
                                                         onClick={() => {
-                                                           const action = prompt(`Editar datos de ${student.username}:\n1. Editar Nombre\n2. Editar Grupo\nIngresa 1 o 2:`);
-                                                           if (action === '1') {
-                                                              const newName = prompt('Nuevo nombre:', student.username);
-                                                              if (newName && newName.trim()) {
-                                                                 const newStats = {...student, username: newName.trim()};
-                                                                 localStorage.setItem('cardacademy_stats_' + student.username, JSON.stringify(newStats));
-                                                                 setAllStudents(prev => prev.map(s => s.username === student.username ? newStats : s));
-                                                              }
-                                                           } else if (action === '2') {
-                                                              const newGrp = prompt('Nuevo grupo (ej. 2A):', student.grade);
-                                                              if (newGrp && newGrp.trim()) {
-                                                                 const newStats = {...student, grade: newGrp.trim() as any};
-                                                                 localStorage.setItem('cardacademy_stats_' + student.username, JSON.stringify(newStats));
-                                                                 setAllStudents(prev => prev.map(s => s.username === student.username ? newStats : s));
-                                                              }
-                                                           }
-                                                        }}
-                                                        className="text-indigo-400 hover:text-indigo-300 font-bold p-2 bg-indigo-500/10 rounded-full transition-all border border-indigo-500/20"
-                                                     >
-                                                        <Pencil size={16} />
-                                                     </button>
-                                                     <button
-                                                        onClick={() => {
-                                                          const confirm = window.confirm(`¿Borrar a ${student.username}?`);
-                                                          if (confirm) {
-                                                             localStorage.removeItem('cardacademy_stats_' + student.username);
-                                                             setAllStudents(prev => prev.filter(s => s.username !== student.username));
+                                                          if (student.id) {
+                                                            setUserToDelete({ id: student.id, name: student.username, role: "Alumno" });
                                                           }
                                                         }}
                                                         className="text-rose-400 hover:text-rose-300 font-bold p-2 bg-rose-500/10 rounded-full transition-all border border-rose-500/20"
@@ -2424,15 +2770,100 @@ export default function App() {
                                                  </td>
                                               </tr>
                                           ))}
-                                          {allStudents.length === 0 && (
-                                              <tr>
-                                                <td colSpan={4} className="px-8 py-10 text-center text-slate-500 font-bold uppercase tracking-widest text-xs">
-                                                   No hay alumnos registrados aún.
-                                                </td>
-                                              </tr>
-                                          )}
                                       </tbody>
                                    </table>
+
+                                   {/* Mobile Card View */}
+                                   <div className="md:hidden divide-y divide-slate-800">
+                                      {allStudents.map(student => (
+                                        <div key={student.username} className="p-5 space-y-4">
+                                          <div className="flex justify-between items-start">
+                                            <div>
+                                              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Alumno</p>
+                                              <div className="flex items-center gap-2">
+                                                <p className="text-sm font-bold text-slate-200">{student.username}</p>
+                                                {(() => {
+                                                   const isOnline = student.lastActive && (new Date().getTime() - new Date(student.lastActive).getTime() < 300000);
+                                                   return (
+                                                     <div className={cn(
+                                                       "w-1.5 h-1.5 rounded-full shrink-0 mt-0.5",
+                                                       isOnline ? "bg-emerald-500 animate-pulse" : "bg-slate-700"
+                                                     )} />
+                                                   );
+                                                })()}
+                                              </div>
+                                            </div>
+                                            <div className="text-right">
+                                              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Grado/Grupo</p>
+                                              <p className="text-sm text-indigo-400 font-black uppercase">{student.grade}</p>
+                                            </div>
+                                          </div>
+                                          
+                                          <div className="flex items-center justify-between bg-slate-950/30 p-4 rounded-2xl border border-slate-800/50">
+                                            <div className="flex items-center gap-3">
+                                              <div className="p-2 bg-amber-500/10 rounded-xl">
+                                                <Coins size={18} className="text-amber-500" />
+                                              </div>
+                                              <div>
+                                                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">Tokens</p>
+                                                <p className="text-lg text-amber-500 font-black leading-none">{student.tokens}</p>
+                                              </div>
+                                                        <div className="flex items-center gap-2">
+                                              <button
+                                                onClick={() => {
+                                                  const action = prompt(`Editar datos de ${student.username}:\n1. Editar Nombre\n2. Editar Grupo\n3. Editar Tokens\nIngresa 1, 2 o 3:`);
+                                                  if (action === '1') {
+                                                    const newName = prompt('Nuevo nombre:', student.username);
+                                                    if (newName && newName.trim() && student.id) {
+                                                      supabaseService.updateUserStats(student.id, { username: newName.trim() }).then(() => {
+                                                        loadUsers();
+                                                        toast.success("Nombre actualizado.");
+                                                      }).catch(console.error);
+                                                    }
+                                                  } else if (action === '2') {
+                                                    const newGrp = prompt('Nuevo grupo (ej. 2A):', student.grade);
+                                                    if (newGrp && newGrp.trim() && student.id) {
+                                                      supabaseService.updateUserStats(student.id, { grade: newGrp.trim() as any }).then(() => {
+                                                        loadUsers();
+                                                        toast.success("Grupo actualizado.");
+                                                      }).catch(console.error);
+                                                    }
+                                                  } else if (action === '3') {
+                                                    const newTokens = prompt('Nuevos tokens:', String(student.tokens));
+                                                    if (newTokens !== null && !isNaN(parseInt(newTokens)) && student.id) {
+                                                      supabaseService.updateUserStats(student.id, { tokens: parseInt(newTokens) }).then(() => {
+                                                        loadUsers();
+                                                        toast.success("Tokens actualizados.");
+                                                      }).catch(console.error);
+                                                    }
+                                                  }
+                                                }}
+                                                className="text-indigo-400 hover:text-indigo-300 font-bold p-2.5 bg-indigo-500/10 rounded-xl transition-all border border-indigo-500/20"
+                                              >
+                                                <Pencil size={18} />
+                                              </button>
+                                              <button
+                                                onClick={() => {
+                                                  if (student.id) {
+                                                    setUserToDelete({ id: student.id, name: student.username, role: "Alumno" });
+                                                  }
+                                                }}
+                                                className="text-rose-400 hover:text-rose-300 font-bold p-2.5 bg-rose-500/10 rounded-xl transition-all border border-rose-500/20"
+                                              >
+                                                <Trash2 size={18} />
+                                              </button>
+                                            </div>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      ))}
+                                   </div>
+
+                                   {allStudents.length === 0 && (
+                                       <div className="px-8 py-12 text-center text-slate-500 font-bold uppercase tracking-widest text-[10px]">
+                                          No hay alumnos registrados aún.
+                                       </div>
+                                   )}
                                </div>
                             </div>
                           </div>
@@ -2454,7 +2885,7 @@ export default function App() {
                             <button className="flex items-center gap-2 px-6 py-3 bg-slate-800 hover:bg-slate-700 rounded-2xl text-white font-black uppercase tracking-widest text-[10px] transition-all border border-slate-700 active:scale-95">
                               <BarChart3 size={18} /> Reporte Grupal
                             </button>
-                            <button className="flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-2xl text-white font-black uppercase tracking-widest text-[10px] transition-all shadow-lg shadow-indigo-600/20 active:scale-95">
+                            <button className="flex items-center gap-2 px-6 py-3 bg-cyan-600 hover:bg-cyan-500 rounded-2xl text-white font-black uppercase tracking-widest text-[10px] transition-all shadow-lg shadow-cyan-600/20 active:scale-95">
                               <Plus size={18} /> Nuevo Desafío
                             </button>
                           </div>
@@ -2464,14 +2895,19 @@ export default function App() {
                           {[
                             {
                               label: "Alumnos a Cargo",
-                              val: MOCK_STUDENTS.filter(s => stats.assignedGroups.includes(s.grade)).length.toString(),
+                              val: globalStudents.filter(s => {
+                                // A student is "under charge" if the teacher has AT LEAST ONE subject assignment for that student's group
+                                return stats.assignedSubjects.some(sub => sub.split(":")[1] === s.grade) || stats.assignedGroups.includes(s.grade);
+                              }).length.toString(),
                               icon: (
                                 <Users size={24} className="text-indigo-400" />
                               ),
                             },
                             {
                               label: "Misiones Resueltas",
-                              val: MOCK_STUDENTS.filter(s => stats.assignedGroups.includes(s.grade)).reduce((acc, curr) => acc + curr.completedTasks.length, 0).toString(),
+                              val: globalStudents.filter(s => {
+                                return stats.assignedSubjects.some(sub => sub.split(":")[1] === s.grade) || stats.assignedGroups.includes(s.grade);
+                              }).reduce((acc, curr) => acc + curr.completedTasks.length, 0).toString(),
                               icon: (
                                 <FileCheck
                                   size={24}
@@ -2481,7 +2917,9 @@ export default function App() {
                             },
                             {
                               label: "Tokens Obtenidos",
-                              val: MOCK_STUDENTS.filter(s => stats.assignedGroups.includes(s.grade)).reduce((acc, curr) => acc + curr.tokens, 0).toString(),
+                              val: globalStudents.filter(s => {
+                                return stats.assignedSubjects.some(sub => sub.split(":")[1] === s.grade) || stats.assignedGroups.includes(s.grade);
+                              }).reduce((acc, curr) => acc + curr.tokens, 0).toString(),
                               icon: (
                                 <Coins
                                   size={24}
@@ -2491,7 +2929,23 @@ export default function App() {
                             },
                             {
                               label: "Entregas por Revisar",
-                              val: "5",
+                              val: globalStudents.reduce((acc, s) => {
+                                // Only count pending tasks for subjects assigned to that student's group
+                                const relevantPending = (s.pendingTasks || []).filter(taskId => {
+                                  // Find which subject this task belongs to
+                                  for (const year in ACADEMIC_CONTENT) {
+                                    for (const subject of ACADEMIC_CONTENT[year as Year]) {
+                                      if (subject.topics.some(t => t.tasks.some(task => task.id === taskId))) {
+                                        // Found subject. Is the teacher assigned to this subject+group?
+                                        return stats.assignedSubjects.includes(`${subject.id}:${s.grade}`) || 
+                                               (stats.assignedSubjects.includes(subject.id) && s.grade.startsWith(year));
+                                      }
+                                    }
+                                  }
+                                  return false;
+                                });
+                                return acc + relevantPending.length;
+                              }, 0).toString(),
                               icon: (
                                 <AlertCircle
                                   size={24}
@@ -2519,11 +2973,120 @@ export default function App() {
                           ))}
                         </div>
 
+                        {(() => {
+                          const studentsWithRelevantTasks = globalStudents.filter(s => {
+                            const relevantPending = (s.pendingTasks || []).filter(taskId => {
+                              for (const year in ACADEMIC_CONTENT) {
+                                for (const subject of ACADEMIC_CONTENT[year as Year]) {
+                                  if (subject.topics.some(t => t.tasks.some(task => task.id === taskId))) {
+                                    return stats.assignedSubjects.includes(`${subject.id}:${s.grade}`) || 
+                                           (stats.assignedSubjects.includes(subject.id) && s.grade.startsWith(year));
+                                  }
+                                }
+                              }
+                              return false;
+                            });
+                            return relevantPending.length > 0;
+                          });
+
+                          if (studentsWithRelevantTasks.length === 0) return null;
+
+                          return (
+                            <div className="bg-amber-500/10 border border-amber-500/20 rounded-[2.5rem] p-6 md:p-8 space-y-6">
+                              <h3 className="text-xl md:text-2xl font-black italic uppercase tracking-tighter text-amber-500 flex items-center gap-3">
+                                <AlertCircle size={24} /> Entregas Pendientes
+                              </h3>
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {studentsWithRelevantTasks.map(student => {
+                                  const relevantPendingTasks = (student.pendingTasks || []).filter(taskId => {
+                                    for (const year in ACADEMIC_CONTENT) {
+                                      for (const subject of ACADEMIC_CONTENT[year as Year]) {
+                                        if (subject.topics.some(t => t.tasks.some(task => task.id === taskId))) {
+                                          return stats.assignedSubjects.includes(`${subject.id}:${student.grade}`) || 
+                                                 (stats.assignedSubjects.includes(subject.id) && student.grade.startsWith(year));
+                                        }
+                                      }
+                                    }
+                                    return false;
+                                  });
+
+                                  return (
+                                    <div key={student.id} className="bg-slate-900 border border-slate-800 rounded-[2rem] p-6 space-y-4">
+                                      <div className="flex justify-between items-start">
+                                        <div className="space-y-1 text-left">
+                                          <h4 className="font-bold text-slate-200">{student.name}</h4>
+                                          <span className="text-xs font-black tracking-widest uppercase text-indigo-400">{student.grade}</span>
+                                        </div>
+                                        <div className="bg-slate-800 text-slate-400 px-3 py-1 rounded-full text-xs font-black">
+                                           {relevantPendingTasks.length} tareas
+                                        </div>
+                                      </div>
+                                      <div className="space-y-3 pt-4 border-t border-slate-800">
+                                        {relevantPendingTasks.map(taskId => {
+                                          // Find task details
+                                          const taskDetails = Object.values(ACADEMIC_CONTENT).flat().flatMap(s => s.topics).flatMap(t => t.tasks).find(t => t.id === taskId);
+                                          if (!taskDetails) return null;
+                                          return (
+                                            <div key={taskId} className="bg-slate-800/50 p-4 rounded-2xl flex flex-col gap-3">
+                                              <div className="text-sm font-bold text-slate-300 italic text-left">{taskDetails.title}</div>
+                                              <div className="flex items-center gap-3">
+                                                <button 
+                                                  onClick={() => {
+                                                    const rawStudent = allStudents.find(u => u.username === student.name);
+                                                    if (!rawStudent) return;
+                                                    const updatedStudent = { ...rawStudent };
+                                                    updatedStudent.pendingTasks = updatedStudent.pendingTasks?.filter(id => id !== taskId);
+                                                    updatedStudent.completedTasks = [...(updatedStudent.completedTasks || []), taskId];
+                                                    if (taskDetails.reward.tokens) updatedStudent.tokens += taskDetails.reward.tokens;
+                                                    if (taskDetails.reward.cardId && !updatedStudent.collection.includes(taskDetails.reward.cardId)) {
+                                                      updatedStudent.collection.push(taskDetails.reward.cardId);
+                                                    }
+                                                    // Sync to Supabase
+                                                    if (rawStudent.id) {
+                                                      supabaseService.updateUserStats(rawStudent.id, updatedStudent).then(() => {
+                                                        loadUsers();
+                                                        toast.success('Entrada aprobada, recompensas enviadas al alumno.');
+                                                      }).catch(console.error);
+                                                    }
+                                                  }}
+                                                  className="flex-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 font-bold text-xs py-2 rounded-xl flex justify-center items-center gap-2 transition-colors border border-emerald-500/30">
+                                                  <CheckCircle2 size={14} /> Aprobar
+                                                </button>
+                                                <button 
+                                                  onClick={() => {
+                                                    const rawStudent = allStudents.find(u => u.username === student.name);
+                                                    if (!rawStudent) return;
+                                                    const updatedStudent = { ...rawStudent };
+                                                    updatedStudent.pendingTasks = updatedStudent.pendingTasks?.filter(id => id !== taskId);
+                                                    
+                                                    if (rawStudent.id) {
+                                                      supabaseService.updateUserStats(rawStudent.id, updatedStudent).then(() => {
+                                                        loadUsers();
+                                                        toast.error('Entrada rechazada, el alumno deberá intentarlo de nuevo.');
+                                                      }).catch(console.error);
+                                                    }
+                                                  }}
+                                                  className="flex-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 font-bold text-xs py-2 rounded-xl flex justify-center items-center gap-2 transition-colors border border-rose-500/30">
+                                                  <Trash2 size={14} /> Rechazar
+                                                </button>
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })()}
+
                       </div>
                     ) : (
                       /* STUDENT WELCOME (HOME) */
                       <div className="flex flex-col gap-4">
-                        <div className="bg-slate-900 border border-indigo-500/20 rounded-[2rem] md:rounded-[2.5rem] p-6 sm:p-10 text-white relative overflow-hidden shadow-2xl group transition-all">
+                        <div className="bg-slate-900 border border-indigo-500/20 rounded-[2rem] md:rounded-[2.5rem] p-6 sm:p-10 text-white relative overflow-hidden shadow-lg group transition-all">
                           <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none bg-[radial-gradient(circle_at_50%_50%,#4f46e5,transparent_70%)]"></div>
                           <div className="relative z-10 flex flex-col md:flex-row items-start justify-between gap-8">
                             <div className="max-w-xl text-left">
@@ -2543,10 +3106,10 @@ export default function App() {
                                   }}
                                   disabled={isGeneratingChallenge}
                                   className={cn(
-                                    "w-full sm:w-auto px-10 py-4 rounded-full font-black uppercase tracking-widest shadow-xl transition-all active:scale-95 text-sm flex items-center justify-center gap-2",
+                                    "w-full sm:w-auto px-10 py-4 rounded-full font-black uppercase tracking-widest shadow-md transition-all active:scale-95 text-sm flex items-center justify-center gap-2",
                                     isGeneratingChallenge
                                       ? "bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed"
-                                      : "bg-indigo-600 text-white hover:bg-indigo-500 shadow-[0_10px_30px_rgba(79,70,229,0.4)]",
+                                      : "bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg",
                                   )}
                                 >
                                   {isGeneratingChallenge ? (
@@ -2595,10 +3158,10 @@ export default function App() {
                                   Estudiantes Destacados
                                 </h4>
                                 <div className="space-y-2">
-                                  {MOCK_STUDENTS
+                                  {globalStudents
                                     .filter(s => s.grade === stats.grade)
                                     .sort((a, b) => b.tokens - a.tokens)
-                                    .slice(0, 5)
+                                    .slice(0, 10)
                                     .map((student, i) => (
                                     <button
                                       key={student.id}
@@ -2608,7 +3171,7 @@ export default function App() {
                                       className={cn(
                                         "w-full flex items-center justify-between p-3 rounded-3xl transition-all border",
                                         selectedStudent?.id === student.id
-                                          ? "bg-indigo-600/10 border-indigo-500/30 text-white shadow-xl"
+                                          ? "bg-indigo-600/10 border-indigo-500/30 text-white shadow-md"
                                           : "bg-transparent border-transparent text-slate-400 hover:bg-slate-800/50 hover:text-slate-200",
                                       )}
                                     >
@@ -2653,7 +3216,7 @@ export default function App() {
                                       <img
                                         src={selectedStudent.avatar}
                                         alt=""
-                                        className="w-24 h-24 rounded-[2rem] border-4 border-indigo-600 shadow-2xl object-cover"
+                                        className="w-24 h-24 rounded-[2rem] border-4 border-indigo-600 shadow-lg object-cover"
                                       />
                                       <div>
                                         <h4 className="text-2xl font-black italic uppercase tracking-tighter text-white">
@@ -2696,7 +3259,7 @@ export default function App() {
                                       </div>
 
                                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-3 px-2 sm:px-0">
-                                        {INITIAL_CARDS.filter(
+                                        {allAvailableCards.filter(
                                           (c) =>
                                             c.category === rankingSubTab &&
                                             selectedStudent.collection.includes(
@@ -2728,7 +3291,7 @@ export default function App() {
                                           );
                                         })}
                                       </div>
-                                      {INITIAL_CARDS.filter(
+                                      {allAvailableCards.filter(
                                         (c) =>
                                           c.category === rankingSubTab &&
                                           selectedStudent.collection.includes(
@@ -2776,14 +3339,14 @@ export default function App() {
                       <div className="space-y-8">
                         <div className="flex flex-col md:flex-row items-start md:items-end justify-between gap-4 md:gap-6 text-left">
                           <div className="min-w-0 max-w-full w-full">
-                            <h2 className="text-3xl sm:text-4xl md:text-5xl font-black italic uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-indigo-600 pb-2 px-1 truncate shrink-0">
+                            <h2 className="text-3xl sm:text-4xl md:text-5xl font-black italic uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-indigo-600 pb-2 px-1 shrink-0">
                               Registro de Cartas
                             </h2>
                             <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-[10px] mt-1 shrink-0">
                               Configuración Maestro de la Colección
                             </p>
                           </div>
-                          <div className="flex bg-slate-900 p-1.5 rounded-2xl border border-slate-800 gap-1 overflow-x-auto no-scrollbar max-w-full w-full justify-center md:justify-end md:w-auto">
+                          <div className="flex bg-slate-900 p-1.5 rounded-2xl border border-slate-800 gap-1 overflow-x-auto transform-gpu no-scrollbar max-w-full w-full justify-center md:justify-end md:w-auto">
                             {[
                               { label: "Canjeables", value: "Reward" },
                               { label: "Logros", value: "Achievement" },
@@ -2807,7 +3370,7 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div className="bg-slate-900 border border-slate-800 rounded-[3rem] p-8 shadow-2xl relative overflow-hidden">
+                        <div className="bg-slate-900 border border-slate-800 rounded-[3rem] p-8 shadow-lg relative overflow-hidden">
                           <div className="absolute top-0 right-0 p-4">
                             <button className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-white font-black uppercase tracking-widest text-[10px] transition-all">
                               <Plus size={14} /> Nueva Carta de{" "}
@@ -2816,7 +3379,7 @@ export default function App() {
                           </div>
 
                           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4 pt-12">
-                            {INITIAL_CARDS.filter(
+                            {allAvailableCards.filter(
                               (c) => c.category === collectionSubTab,
                             ).map((card) => (
                               <button
@@ -2849,7 +3412,7 @@ export default function App() {
                                   <div className="flex items-center gap-1.5 mt-1">
                                     <div
                                       className={cn(
-                                        "w-1.5 h-1.5 rounded-full shadow-[0_0_5px_currentColor]",
+                                        "w-1.5 h-1.5 rounded-full shadow-lg",
                                         card.rarity === "Secret"
                                           ? "bg-rose-400"
                                           : card.rarity === "Legendary"
@@ -2880,7 +3443,7 @@ export default function App() {
                                   </div>
                                 </div>
                                 <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <div className="w-6 h-6 bg-white/10 backdrop-blur-md rounded-lg flex items-center justify-center text-white">
+                                  <div className="w-6 h-6 bg-white/10  rounded-lg flex items-center justify-center text-white">
                                     <Pencil size={12} />
                                   </div>
                                 </div>
@@ -2893,7 +3456,7 @@ export default function App() {
                       <div className="space-y-10">
                         <div className="flex flex-col md:flex-row items-start md:items-end justify-between gap-4 md:gap-6 text-left">
                           <div className="min-w-0 max-w-full w-full">
-                            <h2 className="text-3xl sm:text-4xl md:text-5xl font-black italic uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 to-indigo-600 pb-2 px-1 truncate shrink-0">
+                            <h2 className="text-3xl sm:text-4xl md:text-5xl font-black italic uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 to-indigo-600 pb-2 px-1 shrink-0">
                               Mis Grupos
                             </h2>
                             <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-[10px] mt-1 shrink-0">
@@ -2902,83 +3465,163 @@ export default function App() {
                           </div>
                         </div>
 
-                        {["Tecnología", "Artes"].map((subjectName) => {
-                          // Very basic mock subject grouping logic for now:
-                          // If group starts with '2' it's tech, otherwise arts. Add '3' for tech maybe.
-                          const groupsForSubject = stats.assignedGroups.filter(
-                            (g) => (subjectName === "Tecnología" ? g.startsWith("2") || g.startsWith("3") : g.startsWith("1"))
-                          );
-                          
-                          if (groupsForSubject.length === 0) return null;
+                          {(() => {
+                            const assigned = stats.assignedSubjects || [];
+                            const hasIntegration = assigned.some((sid) => sid.startsWith("int_cur_"));
 
-                          return (
-                            <div key={subjectName} className="space-y-6">
-                              <h3 className="text-xl font-black italic uppercase tracking-tighter text-slate-100 flex items-center gap-3 px-1 border-b border-slate-800 pb-4">
-                                <BookOpenCheck size={20} className="text-indigo-400" />
-                                {subjectName}
-                              </h3>
-                              <div className="flex flex-wrap gap-4">
-                                {groupsForSubject.map((group) => {
-                                  const isSelected = selectedTeacherGroup === group;
-                                  return (
-                                    <button
-                                      key={group}
-                                      onClick={() => setSelectedTeacherGroup(group)}
-                                      className={cn(
-                                        "px-6 py-4 rounded-3xl flex flex-col items-start gap-1 transition-all border-2 text-left",
-                                        isSelected
-                                          ? "bg-indigo-600/20 border-indigo-500 shadow-lg shadow-indigo-500/20"
-                                          : "bg-slate-900 border-slate-800 hover:border-indigo-500/50 hover:bg-slate-800"
-                                      )}
-                                    >
-                                      <span
-                                        className={cn(
-                                          "font-black italic uppercase tracking-tight text-xl",
-                                          isSelected ? "text-indigo-300" : "text-slate-100"
-                                        )}
-                                      >
-                                        Grupo {group}
-                                      </span>
-                                      <span
-                                        className={cn(
-                                          "text-[10px] font-black uppercase tracking-widest",
-                                          isSelected ? "text-indigo-400" : "text-slate-500"
-                                        )}
-                                      >
-                                        {MOCK_STUDENTS.filter(s => s.grade === group).length} Alumnos
-                                      </span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        })}
+                            let subjectNamesWithIds: { id: string; name: string }[] = [];
 
-                        {selectedTeacherGroup && (
-                          <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] overflow-hidden shadow-xl mt-8">
+                            if (hasIntegration) {
+                              // Handle Integration Curricular
+                              const integratedYears = assigned
+                                .filter((sid) => sid.startsWith("int_cur_"))
+                                .map((sid) => sid.split("_")[2]);
+
+                              const allUniqueSubjects = new Map<string, string>();
+                              integratedYears.forEach((year) => {
+                                const content = ACADEMIC_CONTENT[year as Year] || [];
+                                content.forEach((s) => allUniqueSubjects.set(s.id, s.name));
+                              });
+
+                              assigned.forEach((sid) => {
+                                // Extract base ID if it's the new format subjectId:groupId
+                                const baseId = sid.includes(":") ? sid.split(":")[0] : sid;
+                                for (const y in ACADEMIC_CONTENT) {
+                                  const s = (ACADEMIC_CONTENT[y as Year] || []).find((sub) => sub.id === baseId);
+                                  if (s) allUniqueSubjects.set(baseId, s.name);
+                                }
+                              });
+
+                              subjectNamesWithIds = Array.from(allUniqueSubjects.entries()).map(([id, name]) => ({ id, name }));
+                            } else {
+                              const uniqueBaseIds = Array.from(new Set(assigned.map((sid) => (sid.includes(":") ? sid.split(":")[0] : sid))));
+                              subjectNamesWithIds = uniqueBaseIds
+                                .map((sid) => {
+                                  for (const year in ACADEMIC_CONTENT) {
+                                    const yearContent = ACADEMIC_CONTENT[year as Year];
+                                    if (yearContent) {
+                                      const sub = yearContent.find((s) => s.id === sid);
+                                      if (sub) return { id: sid, name: sub.name };
+                                    }
+                                  }
+                                  return null;
+                                })
+                                .filter((x): x is { id: string; name: string } => x !== null);
+                            }
+
+                            return subjectNamesWithIds.map((subjectInfo) => {
+                              if (!subjectInfo) return null;
+                              const { id: sid, name: subjectName } = subjectInfo;
+
+                              const subjectYear = sid.split("_")[1] || "1";
+                              
+                              // New granular logic:
+                              // If there's any mapping for this subject in the format 'subjectId:groupId', use those.
+                              // Otherwise, fall back to matching by year.
+                              const specificMappings = (stats.assignedSubjects || [])
+                                .filter(s => s.startsWith(`${sid}:`))
+                                .map(s => s.split(':')[1]);
+                              
+                              const groupsForSubject = specificMappings.length > 0
+                                ? specificMappings
+                                : (stats.assignedGroups || []).filter((g) => g.startsWith(subjectYear));
+
+                              if (groupsForSubject.length === 0) return null;
+
+                              return (
+                                <div key={sid} className="space-y-6">
+                                  <h3 className="text-xl font-black italic uppercase tracking-tighter text-slate-100 flex items-center gap-3 px-1 border-b border-slate-800 pb-4">
+                                    <BookOpenCheck size={20} className="text-indigo-400" />
+                                    {subjectName} ({subjectYear}º Año)
+                                  </h3>
+                                  <div className="flex flex-wrap gap-4">
+                                    {groupsForSubject.map((group) => {
+                                      const isSelected = selectedTeacherGroup === group;
+                                      return (
+                                        <button
+                                          key={group}
+                                          onClick={() => setSelectedTeacherGroup(group)}
+                                          className={cn(
+                                            "px-6 py-4 rounded-3xl flex flex-col items-start gap-1 transition-all border-2 text-left",
+                                            isSelected
+                                              ? "bg-indigo-600/20 border-indigo-500 shadow-lg shadow-indigo-500/20"
+                                              : "bg-slate-900 border-slate-800 hover:border-indigo-500/50 hover:bg-slate-800",
+                                          )}
+                                        >
+                                          <span
+                                            className={cn(
+                                              "font-black italic uppercase tracking-tight text-xl",
+                                              isSelected ? "text-cyan-400" : "text-slate-100",
+                                            )}
+                                          >
+                                            Grupo {group}
+                                          </span>
+                                          <span
+                                            className={cn(
+                                              "text-[10px] font-black uppercase tracking-widest",
+                                              isSelected ? "text-indigo-400" : "text-slate-500",
+                                            )}
+                                          >
+                                            {globalStudents.filter((s) => s.grade === group).length} Alumnos
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            });
+                          })()}
+
+                      {selectedTeacherGroup && (
+                          <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] overflow-hidden shadow-md mt-8">
                             <div className="px-8 py-5 border-b border-slate-800 flex justify-between items-center bg-slate-800/30">
                               <h4 className="text-xs font-black uppercase tracking-widest text-white italic">
                                 Alumnos de {selectedTeacherGroup}
                               </h4>
                               <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                                {MOCK_STUDENTS.filter(s => s.grade === selectedTeacherGroup).length} Alumnos Activos
+                                {globalStudents.filter(s => s.grade === selectedTeacherGroup).length} Alumnos Activos
                               </div>
                             </div>
                             <div className="flex flex-col divide-y divide-slate-800/50">
-                              {MOCK_STUDENTS.filter(s => s.grade === selectedTeacherGroup).map((student) => {
+                              {globalStudents.filter(s => s.grade === selectedTeacherGroup).map((student) => {
                                 const studentData = student as Student;
                                 const isOnline = (studentData.tokens % 3 === 0) || (studentData.streak > 8);
-                                const totalTasks = ACADEMIC_CONTENT[student.grade[0] as Year]
-                                  .filter((s) => stats.assignedSubjects.includes(s.id))
+                                const yearKey = (student.grade?.[0] || "1") as Year;
+                                const studentGrade = student.grade;
+                                
+                                const hasIntegrationThisYear = (stats.assignedSubjects || []).some(s => {
+                                  const baseId = s.includes(':') ? s.split(':')[0] : s;
+                                  const group = s.includes(':') ? s.split(':')[1] : null;
+                                  return baseId === `int_cur_${yearKey}` && (!group || group === studentGrade);
+                                });
+                                
+                                // Override subjects to check based on integration status and granular assignments
+                                const specificSubjectsForThisGrade = (stats.assignedSubjects || [])
+                                  .filter(s => s.includes(':') ? s.split(':')[1] === studentGrade : false)
+                                  .map(s => s.split(':')[0]);
+                                
+                                const legacySubjects = (stats.assignedSubjects || [])
+                                  .filter(s => !s.includes(':'));
+
+                                const baseSubjects = [...new Set([...specificSubjectsForThisGrade, ...legacySubjects])];
+
+                                const subjectsToCheck = hasIntegrationThisYear 
+                                  ? (ACADEMIC_CONTENT[yearKey] || []).map(s => s.id)
+                                  : baseSubjects;
+
+                                const totalTasks = (ACADEMIC_CONTENT[yearKey] || [])
+                                  .filter((s) => subjectsToCheck.includes(s.id))
                                   .reduce((acc, s) => acc + s.topics.reduce((acc2, t) => acc2 + t.tasks.length, 0), 0);
+                                
                                 const completedTasksCount = studentData.completedTasks.filter((taskId) =>
-                                  stats.assignedSubjects.some((subId) =>
-                                    ACADEMIC_CONTENT[student.grade[0] as Year]
+                                  subjectsToCheck.some((subId) =>
+                                    (ACADEMIC_CONTENT[yearKey] || [])
                                       .find((s) => s.id === subId)
                                       ?.topics.some((t) => t.tasks.some((task) => task.id === taskId))
                                   )
                                 ).length;
+                                
                                 const progress = totalTasks > 0 ? (completedTasksCount / totalTasks) * 100 : 0;
                                 return (
                                   <div
@@ -3001,7 +3644,7 @@ export default function App() {
                                           )}
                                         </div>
                                         {isOnline ? (
-                                          <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-emerald-400 border-2 border-slate-900 rounded-full shadow-[0_0_8px_rgba(52,211,153,0.5)]"></div>
+                                          <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-emerald-400 border-2 border-slate-900 rounded-full shadow-lg"></div>
                                         ) : (
                                           <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-slate-500 border-2 border-slate-900 rounded-full"></div>
                                         )}
@@ -3032,7 +3675,7 @@ export default function App() {
                                         </div>
                                         <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
                                           <div
-                                            className="h-full bg-indigo-500 shadow-[0_0_10px_rgba(79,70,229,0.5)] transition-all duration-1000"
+                                            className="h-full bg-indigo-500 shadow-lg transition-all duration-1000"
                                             style={{
                                               width: `${progress}%`,
                                             }}
@@ -3049,7 +3692,7 @@ export default function App() {
                                   </div>
                                 );
                               })}
-                              {MOCK_STUDENTS.filter(s => s.grade === selectedTeacherGroup).length === 0 && (
+                              {globalStudents.filter(s => s.grade === selectedTeacherGroup).length === 0 && (
                                 <div className="p-12 border-t border-slate-800 flex flex-col items-center justify-center text-center text-slate-500 font-bold text-xs uppercase tracking-widest">
                                   <Users size={32} className="opacity-20 mb-4" />
                                   No hay alumnos en este grupo
@@ -3064,11 +3707,11 @@ export default function App() {
                         collection={stats.collection}
                         animatingCards={animatingCards}
                         onAnimationsComplete={() => setAnimatingCards([])}
-                        cards={INITIAL_CARDS}
+                        cards={allAvailableCards}
                         packs={INITIAL_PACKS}
                         role={stats.role}
                         onRedeemReward={(card) => {
-                          alert(`¡Carta canjeada! Muestra esto a tu profesor: ${card.name}`);
+                          toast.success(`¡Carta canjeada! Muestra esto a tu profesor: ${card.name}`);
                         }}
                       />
                     )}
@@ -3097,17 +3740,17 @@ export default function App() {
                     </div>
 
                     {stats.role === "Admin" ? (
-                      <div className="flex-1 overflow-y-auto w-full no-scrollbar px-2 sm:px-4 pb-4">
+                      <div className="flex-1 overflow-y-auto transform-gpu w-full no-scrollbar px-2 sm:px-4 pb-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8 max-w-6xl mx-auto items-stretch pt-2">
                           {packs.map((pack) => (
                           <div
                             key={pack.id}
-                            className="bg-slate-900 border border-slate-800 rounded-[2.5rem] md:rounded-[3rem] p-8 md:p-10 shadow-xl flex flex-col justify-between group hover:border-indigo-500/30 transition-all hover:-translate-y-2"
+                            className="bg-slate-900 border border-slate-800 rounded-[2.5rem] md:rounded-[3rem] p-8 md:p-10 shadow-md flex flex-col justify-between group hover:border-indigo-500/30 transition-all hover:-translate-y-2"
                           >
                             <div className="space-y-6">
                               <div
                                 className={cn(
-                                  "w-32 h-48 mx-auto flex flex-col items-center justify-center shadow-2xl relative overflow-hidden bg-slate-800 rounded-xl",
+                                  "w-32 h-48 mx-auto flex flex-col items-center justify-center shadow-lg relative overflow-hidden bg-slate-800 rounded-xl",
                                   pack.id === "pack_jacobo"
                                     ? "bg-gradient-to-b from-slate-400 via-slate-600 to-slate-800 border border-slate-500/50"
                                     : pack.id === "pack_culiacan"
@@ -3146,17 +3789,17 @@ export default function App() {
                                 <div className="absolute inset-1.5 top-5 bottom-5 bg-gradient-to-t from-black/80 via-black/10 to-transparent rounded pointer-events-none" />
 
                                 {pack.active && (
-                                  <div className="absolute top-4 right-2 w-2.5 h-2.5 bg-emerald-500 rounded-full shadow-[0_0_10px_#10b981] z-30 ring-2 ring-white/20"></div>
+                                  <div className="absolute top-4 right-2 w-2.5 h-2.5 bg-emerald-500 rounded-full shadow-lg z-30 ring-2 ring-white/20"></div>
                                 )}
-                                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full text-center z-20 px-1 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] mt-2">
+                                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full text-center z-20 px-1  mt-2">
                                   <span
                                     className={cn(
                                       "text-2xl font-black italic uppercase tracking-tighter leading-none block",
                                       pack.id === "pack_jacobo"
-                                        ? "text-slate-100 drop-shadow-[0_2px_4px_rgba(0,0,0,1)]"
+                                        ? "text-slate-100 "
                                         : pack.id === "pack_culiacan"
-                                          ? "text-indigo-100 drop-shadow-[0_2px_4px_rgba(0,0,0,1)]"
-                                          : "text-amber-100 drop-shadow-[0_2px_4px_rgba(0,0,0,1)]",
+                                          ? "text-indigo-100 "
+                                          : "text-amber-100 ",
                                     )}
                                   >
                                     {pack.name.replace(
@@ -3216,7 +3859,7 @@ export default function App() {
                           onPointerMove={handlePointerMove}
                           onPointerUp={handlePointerUpOrLeave}
                           onPointerLeave={handlePointerUpOrLeave}
-                          className={cn("flex overflow-x-auto lg:overflow-x-visible gap-4 sm:gap-6 lg:gap-12 px-[15vw] sm:px-[25vw] lg:px-4 py-8 md:py-12 no-scrollbar items-center justify-start lg:justify-center min-w-full cursor-grab lg:cursor-auto active:cursor-grabbing select-none h-auto items-stretch sm:items-center", isDraggingPack ? "" : "snap-x snap-mandatory lg:snap-none")}
+                          className={cn("flex overflow-x-auto transform-gpu lg:overflow-x-visible gap-4 sm:gap-6 lg:gap-12 px-[15vw] sm:px-[25vw] lg:px-4 py-8 md:py-12 no-scrollbar items-center justify-start lg:justify-center min-w-full cursor-grab lg:cursor-auto active:cursor-grabbing select-none h-auto items-stretch sm:items-center", isDraggingPack ? "" : "snap-x snap-mandatory lg:snap-none")}
                         >
                           {packs
                             .filter((p) => p.active)
@@ -3227,7 +3870,7 @@ export default function App() {
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ delay: idx * 0.1 }}
                                 className={cn(
-                                  "flex-none w-[75vw] sm:w-[45vw] md:w-[300px] max-h-[100%] sm:max-h-full snap-center bg-slate-900 border border-slate-800 rounded-[2rem] md:rounded-[2.5rem] p-4 sm:p-6 md:p-8 shadow-2xl relative overflow-hidden flex flex-col items-center justify-between gap-3 sm:gap-4 md:gap-6 group transition-all duration-500",
+                                  "flex-none w-[75vw] sm:w-[45vw] md:w-[300px] max-h-[100%] sm:max-h-full snap-center bg-slate-900 border border-slate-800 rounded-[2rem] md:rounded-[2.5rem] p-4 sm:p-6 md:p-8 shadow-lg relative overflow-hidden flex flex-col items-center justify-between gap-3 sm:gap-4 md:gap-6 group transition-all duration-500",
                                   "hover:scale-[1.02] hover:border-indigo-500 hover:shadow-indigo-500/20 z-10",
                                 )}
                               >
@@ -3238,7 +3881,7 @@ export default function App() {
                                 <div className="relative flex-1 min-h-0 flex flex-col justify-center w-full">
                                   <div
                                     className={cn(
-                                      "w-full h-full min-h-[150px] aspect-[4/5] sm:w-48 sm:h-[260px] sm:aspect-auto rounded-xl mx-auto shadow-[0_25px_50px_rgba(0,0,0,0.7)] flex flex-col items-center justify-center group-hover:scale-[1.02] transition-transform duration-500 relative overflow-hidden bg-slate-800",
+                                      "w-full h-full min-h-[150px] aspect-[4/5] sm:w-48 sm:h-[260px] sm:aspect-auto rounded-xl mx-auto shadow-lg flex flex-col items-center justify-center group-hover:scale-[1.02] transition-transform duration-500 relative overflow-hidden bg-slate-800",
                                       pack.id === "pack_jacobo"
                                         ? "bg-gradient-to-b from-slate-400 via-slate-600 to-slate-900 border border-slate-400/50"
                                         : pack.id === "pack_culiacan"
@@ -3274,20 +3917,20 @@ export default function App() {
                                       }
                                       alt={pack.name}
                                       draggable={false}
-                                      className="absolute inset-[8px] sm:inset-2.5 top-[32px] bottom-[32px] sm:top-10 sm:bottom-10 w-[calc(100%-16px)] sm:w-[calc(100%-20px)] h-[calc(100%-64px)] sm:h-[calc(100%-80px)] object-cover rounded-md opacity-90 border border-white/20 shadow-[inset_0_0_20px_rgba(0,0,0,0.8)] pointer-events-none"
+                                      className="absolute inset-[8px] sm:inset-2.5 top-[32px] bottom-[32px] sm:top-10 sm:bottom-10 w-[calc(100%-16px)] sm:w-[calc(100%-20px)] h-[calc(100%-64px)] sm:h-[calc(100%-80px)] object-cover rounded-md opacity-90 border border-white/20 shadow-lg pointer-events-none"
                                     />
 
                                     <div className="absolute inset-[8px] sm:inset-2.5 top-[32px] bottom-[32px] sm:top-10 sm:bottom-10 bg-gradient-to-t from-black/90 via-black/20 to-black/30 rounded-md pointer-events-none" />
 
-                                    <div className="absolute top-10 sm:top-14 left-1/2 -translate-x-1/2 w-full text-center z-20 px-2 drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] pointer-events-none">
+                                    <div className="absolute top-10 sm:top-14 left-1/2 -translate-x-1/2 w-full text-center z-20 px-2  pointer-events-none">
                                       <span
                                         className={cn(
                                           "text-2xl sm:text-3xl font-black italic uppercase tracking-tighter leading-none block",
                                           pack.id === "pack_jacobo"
-                                            ? "text-slate-100 drop-shadow-[0_2px_4px_rgba(0,0,0,1)]"
+                                            ? "text-slate-100 "
                                             : pack.id === "pack_culiacan"
-                                              ? "text-indigo-100 drop-shadow-[0_2px_4px_rgba(0,0,0,1)]"
-                                              : "text-amber-100 drop-shadow-[0_2px_4px_rgba(0,0,0,1)]",
+                                              ? "text-indigo-100 "
+                                              : "text-amber-100 ",
                                         )}
                                       >
                                         {pack.name.replace(
@@ -3303,7 +3946,7 @@ export default function App() {
                                   <button
                                     onClick={() => buyPack(pack)}
                                     className={cn(
-                                      "flex-1 py-3 md:py-4 rounded-xl md:rounded-2xl font-black text-sm md:text-lg uppercase tracking-widest shadow-2xl transition-all active:scale-95 flex items-center justify-center gap-2",
+                                      "flex-1 py-3 md:py-4 rounded-xl md:rounded-2xl font-black text-sm md:text-lg uppercase tracking-widest shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2",
                                       "bg-slate-800 text-white hover:bg-indigo-600 border border-slate-700 hover:border-indigo-500",
                                     )}
                                   >
@@ -3312,7 +3955,7 @@ export default function App() {
                                   <button
                                     onClick={() => setExchangePackId(pack.id)}
                                     className={cn(
-                                      "px-4 md:px-5 py-3 md:py-4 rounded-xl md:rounded-2xl shadow-2xl transition-all active:scale-95 flex items-center justify-center",
+                                      "px-4 md:px-5 py-3 md:py-4 rounded-xl md:rounded-2xl shadow-lg transition-all active:scale-95 flex items-center justify-center",
                                       "bg-slate-800 text-white hover:bg-emerald-600 border border-slate-700 hover:border-emerald-500",
                                       !stats.packCurrencies?.[pack.id] && "opacity-50"
                                     )}
@@ -3331,14 +3974,14 @@ export default function App() {
             </main>
 
             {/* Footer Navigation */}
-            <footer className="fixed bottom-0 left-0 right-0 h-20 bg-slate-900/60 backdrop-blur-xl border-t border-slate-800 px-6 z-40 flex justify-center">
+            <footer className="fixed bottom-0 left-0 right-0 h-20 bg-slate-900/95 backdrop-blur-xl border-t border-slate-800 px-6 z-40 flex justify-center">
               <div className="w-full max-w-lg flex justify-between items-center h-full">
                 <button
                   onClick={() => setActiveTab("home")}
                   className={cn(
                     "flex flex-col items-center gap-1.5 px-2 sm:px-4 py-2 rounded-2xl transition-all duration-300 group",
                     activeTab === "home"
-                      ? "text-indigo-400 bg-indigo-500/10 shadow-[inset_0_0_10px_rgba(79,70,229,0.2)]"
+                      ? "text-indigo-400 bg-indigo-500/10 shadow-lg"
                       : "text-slate-500 hover:text-slate-300",
                   )}
                 >
@@ -3356,7 +3999,7 @@ export default function App() {
                   className={cn(
                     "flex flex-col items-center gap-1.5 px-2 sm:px-4 py-2 rounded-2xl transition-all duration-300 group",
                     activeTab === "challenges"
-                      ? "text-indigo-400 bg-indigo-500/10 shadow-[inset_0_0_10px_rgba(79,70,229,0.2)]"
+                      ? "text-indigo-400 bg-indigo-500/10 shadow-lg"
                       : "text-slate-500 hover:text-slate-300",
                   )}
                 >
@@ -3376,7 +4019,7 @@ export default function App() {
                   className={cn(
                     "flex flex-col items-center gap-1.5 px-2 sm:px-4 py-2 rounded-2xl transition-all duration-300 group",
                     activeTab === "collection"
-                      ? "text-indigo-400 bg-indigo-500/10 shadow-[inset_0_0_10px_rgba(79,70,229,0.2)]"
+                      ? "text-indigo-400 bg-indigo-500/10 shadow-lg"
                       : "text-slate-500 hover:text-slate-300",
                   )}
                 >
@@ -3410,7 +4053,7 @@ export default function App() {
                     className={cn(
                       "flex flex-col items-center gap-1.5 px-2 sm:px-4 py-2 rounded-2xl transition-all duration-300 group",
                       activeTab === "shop"
-                        ? "text-indigo-400 bg-indigo-500/10 shadow-[inset_0_0_10px_rgba(79,70,229,0.2)]"
+                        ? "text-indigo-400 bg-indigo-500/10 shadow-lg"
                         : "text-slate-500 hover:text-slate-300",
                     )}
                   >
@@ -3429,7 +4072,7 @@ export default function App() {
                   className={cn(
                     "flex flex-col items-center gap-1.5 px-2 sm:px-4 py-2 rounded-2xl transition-all duration-300 group",
                     activeTab === "profile"
-                      ? "text-indigo-400 bg-indigo-500/10 shadow-[inset_0_0_10px_rgba(79,70,229,0.2)]"
+                      ? "text-indigo-400 bg-indigo-500/10 shadow-lg"
                       : "text-slate-500 hover:text-slate-300",
                   )}
                 >
@@ -3453,7 +4096,7 @@ export default function App() {
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     onClick={() => setSelectedAdminCard(null)}
-                    className="absolute inset-0 bg-slate-950/90 backdrop-blur-xl"
+                    className="absolute inset-0 bg-slate-950/90 "
                   />
 
                   <motion.div
@@ -3461,7 +4104,7 @@ export default function App() {
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.9, y: 20 }}
                     className={cn(
-                      "relative w-full max-w-4xl bg-slate-900 rounded-[3rem] border shadow-2xl overflow-y-auto no-scrollbar flex flex-col md:flex-row max-h-[85vh]",
+                      "relative w-full max-w-4xl bg-slate-900 rounded-[3rem] border shadow-lg overflow-y-auto transform-gpu no-scrollbar flex flex-col md:flex-row max-h-[85vh]",
                       selectedAdminCard.rarity === "Legendary"
                         ? "border-amber-500/50 shadow-amber-500/20"
                         : selectedAdminCard.rarity === "Epic"
@@ -3474,7 +4117,7 @@ export default function App() {
                     {/* Close Button */}
                     <button
                       onClick={() => setSelectedAdminCard(null)}
-                      className="absolute top-6 right-6 w-12 h-12 bg-slate-800/80 hover:bg-slate-700 text-white rounded-full flex items-center justify-center z-20 transition-all active:scale-95 backdrop-blur-md"
+                      className="absolute top-6 right-6 w-12 h-12 bg-slate-800/80 hover:bg-slate-700 text-white rounded-full flex items-center justify-center z-20 transition-all active:scale-95 "
                     >
                       <X size={24} />
                     </button>
@@ -3491,14 +4134,14 @@ export default function App() {
                         className={cn(
                           "absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-transparent opacity-60",
                           selectedAdminCard.rarity === "Legendary" &&
-                            "shadow-[inset_0_0_100px_rgba(245,158,11,0.2)]",
+                            "shadow-lg",
                         )}
                       />
 
                       <div className="absolute bottom-8 left-8">
                         <span
                           className={cn(
-                            "px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl",
+                            "px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md",
                             selectedAdminCard.rarity === "Legendary"
                               ? "bg-amber-500 text-slate-950"
                               : selectedAdminCard.rarity === "Epic"
@@ -3514,7 +4157,7 @@ export default function App() {
                     </div>
 
                     {/* Right Side: Details */}
-                    <div className="flex-1 p-8 md:p-12 space-y-6 flex flex-col justify-center overflow-y-auto">
+                    <div className="flex-1 p-8 md:p-12 space-y-6 flex flex-col justify-center overflow-y-auto transform-gpu">
                       <div className="space-y-2 text-center md:text-left">
                         <h2 className="text-3xl md:text-5xl font-black italic uppercase tracking-tighter text-white leading-none">
                           {selectedAdminCard.name}
@@ -3575,7 +4218,7 @@ export default function App() {
               {showPackOpener && activePack && (
                 <PackOpening
                   pack={activePack}
-                  availableCards={INITIAL_CARDS.filter(
+                  availableCards={allAvailableCards.filter(
                     (c) => c.category === "Collectible",
                   )}
                   onCardsDrawn={handleCardsDrawn}
@@ -3589,11 +4232,11 @@ export default function App() {
               )}
 
               {exchangePackId && (
-                <div className="fixed inset-0 z-[120] flex items-center justify-center p-2 sm:p-4 bg-slate-950/90 backdrop-blur-xl overflow-y-auto">
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-2 sm:p-4 bg-slate-950/90  overflow-y-auto transform-gpu">
                   <motion.div
                     initial={{ scale: 0.9, opacity: 0, y: 20 }}
                     animate={{ scale: 1, opacity: 1, y: 0 }}
-                    className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-5xl w-full relative my-auto shadow-2xl"
+                    className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-5xl w-full relative my-auto shadow-lg"
                   >
                     <button
                       onClick={() => setExchangePackId(null)}
@@ -3616,8 +4259,8 @@ export default function App() {
                        </div>
                     </div>
 
-                    <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
-                      {INITIAL_CARDS.filter(c => c.category === 'Collectible' && (c.sourcePackId || 'pack_jacobo') === exchangePackId).map(card => {
+                    <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 max-h-[60vh] overflow-y-auto transform-gpu pr-2 custom-scrollbar">
+                      {allAvailableCards.filter(c => c.category === 'Collectible' && (c.sourcePackId || 'pack_jacobo') === exchangePackId).map(card => {
                          const isOwned = stats.collection.includes(card.id);
                          if (isOwned) return null; // Don't show owned cards
 
@@ -3658,7 +4301,7 @@ export default function App() {
                            </div>
                          );
                       })}
-                      {INITIAL_CARDS.filter(c => c.category === 'Collectible' && (c.sourcePackId || 'pack_jacobo') === exchangePackId && !stats.collection.includes(c.id)).length === 0 && (
+                      {allAvailableCards.filter(c => c.category === 'Collectible' && (c.sourcePackId || 'pack_jacobo') === exchangePackId && !stats.collection.includes(c.id)).length === 0 && (
                         <div className="col-span-full py-12 text-center text-slate-500 font-bold tracking-widest uppercase text-xs">
                           Ya tienes todas las cartas de este sobre.
                         </div>
@@ -3675,23 +4318,23 @@ export default function App() {
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     onClick={() => setShowChallengeModal(false)}
-                    className="absolute inset-0 bg-slate-950/90 backdrop-blur-xl"
+                    className="absolute inset-0 bg-slate-950/90 "
                   />
                   <motion.div
                     initial={{ scale: 0.9, opacity: 0, y: 20 }}
                     animate={{ scale: 1, opacity: 1, y: 0 }}
                     exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                    className="relative w-full max-w-2xl max-h-[90vh] bg-slate-900 rounded-[2rem] sm:rounded-[3rem] border border-indigo-500/20 shadow-2xl flex flex-col"
+                    className="relative w-full max-w-2xl max-h-[90vh] bg-slate-900 rounded-[2rem] sm:rounded-[3rem] border border-indigo-500/20 shadow-lg flex flex-col"
                   >
                     <div className="flex justify-end p-4 absolute top-0 right-0 z-[130] pointer-events-none">
                       <button
                         onClick={() => setShowChallengeModal(false)}
-                        className="w-10 h-10 bg-slate-800/80 text-slate-400 hover:text-white rounded-full flex items-center justify-center pointer-events-auto transition-all active:scale-95 backdrop-blur-md border border-white/5"
+                        className="w-10 h-10 bg-slate-800/80 text-slate-400 hover:text-white rounded-full flex items-center justify-center pointer-events-auto transition-all active:scale-95  border border-white/5"
                       >
                         <X size={20} />
                       </button>
                     </div>
-                    <div className="flex-1 overflow-y-auto no-scrollbar pt-2 sm:pt-0">
+                    <div className="flex-1 overflow-y-auto transform-gpu no-scrollbar pt-2 sm:pt-0">
                       <DailyChallenge
                         challenge={currentChallenge}
                         isCompleted={sessionCompletedChallenges.has(currentChallenge.id)}
@@ -3718,12 +4361,12 @@ export default function App() {
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     onClick={() => setEditingPack(null)}
-                    className="absolute inset-0 bg-slate-950/90 backdrop-blur-xl"
+                    className="absolute inset-0 bg-slate-950/90 "
                   />
                   <motion.div
                     initial={{ scale: 0.9, opacity: 0, y: 20 }}
                     animate={{ scale: 1, opacity: 1, y: 0 }}
-                    className="relative w-full max-w-xl bg-slate-900 border border-slate-800 rounded-[3rem] shadow-2xl p-6 sm:p-8 md:p-12 overflow-y-auto no-scrollbar max-h-[90vh] mx-auto"
+                    className="relative w-full max-w-xl bg-slate-900 border border-slate-800 rounded-[3rem] shadow-lg p-6 sm:p-8 md:p-12 overflow-y-auto transform-gpu no-scrollbar max-h-[90vh] mx-auto"
                   >
                     <div className="flex items-center justify-between mb-8">
                       <h2 className="text-4xl font-black italic uppercase tracking-tighter text-white">
@@ -3871,7 +4514,7 @@ export default function App() {
                               editingPack.rarities,
                             ).reduce((a, b) => a + b, 0);
                             if (total !== 100) {
-                              alert(
+                              toast.error(
                                 "ERROR: La suma de las probabilidades debe ser exactamente 100%",
                               );
                               return;
@@ -3883,7 +4526,7 @@ export default function App() {
                             );
                             setEditingPack(null);
                           }}
-                          className="flex-3 py-5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black uppercase tracking-widest text-xs transition-all shadow-xl active:scale-95"
+                          className="flex-3 py-5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black uppercase tracking-widest text-xs transition-all shadow-md active:scale-95"
                         >
                           Guardar Cambios
                         </button>
@@ -3899,12 +4542,111 @@ export default function App() {
                 </div>
               )}
 
+               {showPasswordModal && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-sm">
+                  <motion.div
+                    initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                    animate={{ scale: 1, opacity: 1, y: 0 }}
+                    exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                    className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-[2.5rem] shadow-2xl overflow-hidden"
+                  >
+                    <div className="p-8 space-y-6">
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-cyan-500/10 rounded-2xl flex items-center justify-center text-cyan-400">
+                            <Key size={20} />
+                          </div>
+                          <h3 className="text-xl font-black italic uppercase tracking-tighter text-white">
+                            Contraseña
+                          </h3>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setShowPasswordModal(false);
+                            setPasswordForm({ current: "", new: "", confirm: "" });
+                          }}
+                          className="w-8 h-8 bg-slate-800 rounded-full flex items-center justify-center text-slate-500 hover:text-white transition-colors"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Nueva Contraseña</label>
+                          <input 
+                            type="password"
+                            value={passwordForm.new}
+                            onChange={(e) => setPasswordForm(prev => ({ ...prev, new: e.target.value }))}
+                            placeholder="••••••••"
+                            className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500/50 outline-none transition-all placeholder:text-slate-700 font-mono"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Confirmar Contraseña</label>
+                          <input 
+                            type="password"
+                            value={passwordForm.confirm}
+                            onChange={(e) => setPasswordForm(prev => ({ ...prev, confirm: e.target.value }))}
+                            placeholder="••••••••"
+                            className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500/50 outline-none transition-all placeholder:text-slate-700 font-mono"
+                          />
+                        </div>
+                      </div>
+
+                      <button
+                        disabled={isChangingPassword || !passwordForm.new || !passwordForm.confirm}
+                        onClick={async () => {
+                          if (passwordForm.new !== passwordForm.confirm) {
+                            toast.error("Las contraseñas no coinciden");
+                            return;
+                          }
+                          if (passwordForm.new.length < 6) {
+                            toast.error("La contraseña debe tener al menos 6 caracteres");
+                            return;
+                          }
+
+                          setIsChangingPassword(true);
+                          try {
+                            const { error } = await supabaseService.updatePassword(passwordForm.new);
+                            if (error) throw error;
+                            
+                            toast.success("¡Contraseña actualizada exitosamente!");
+                            setShowPasswordModal(false);
+                            setPasswordForm({ current: "", new: "", confirm: "" });
+                          } catch (err: any) {
+                            toast.error(`Error: ${err.message || "No se pudo actualizar"}`);
+                          } finally {
+                            setIsChangingPassword(false);
+                          }
+                        }}
+                        className={cn(
+                          "w-full py-5 rounded-2xl font-black uppercase tracking-widest text-xs transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2",
+                          isChangingPassword || !passwordForm.new || !passwordForm.confirm
+                            ? "bg-slate-800 text-slate-600 cursor-not-allowed"
+                            : "bg-cyan-600 hover:bg-cyan-500 text-white shadow-cyan-500/20"
+                        )}
+                      >
+                        {isChangingPassword ? (
+                          <>
+                            <Loader2 size={16} className="animate-spin" />
+                            Actualizando...
+                          </>
+                        ) : (
+                          "Actualizar Contraseña"
+                        )}
+                      </button>
+                    </div>
+                  </motion.div>
+                </div>
+              )}
+
               {assignmentModal.isOpen && (
-                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xl">
+                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/80 ">
                   <motion.div
                     initial={{ scale: 0.9, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
-                    className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-[3rem] overflow-y-auto max-h-[90vh] no-scrollbar shadow-2xl"
+                    className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-[3rem] overflow-y-auto transform-gpu max-h-[90vh] no-scrollbar shadow-lg"
                   >
                     <div className="p-10 space-y-8">
                       <div className="flex justify-between items-start">
@@ -3938,118 +4680,361 @@ export default function App() {
                       </div>
 
                       <div className="space-y-6">
-                        <div className="space-y-2">
-                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-2">
-                            Grupos Asignados
-                          </label>
-                          <div className="grid grid-cols-4 gap-2">
-                            {SCHOOL_GROUPS.map((g) => (
-                              <button
-                                key={g}
-                                onClick={() =>
-                                  setAssignmentModal((prev) => ({
-                                    ...prev,
-                                    selectedGroups: prev.selectedGroups.includes(g)
-                                      ? prev.selectedGroups.filter((x) => x !== g)
-                                      : [...prev.selectedGroups, g],
-                                  }))
-                                }
-                                className={cn(
-                                  "p-2 rounded-xl border text-xs font-black uppercase tracking-widest transition-all",
-                                  assignmentModal.selectedGroups.includes(g)
-                                    ? "bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-500/20"
-                                    : "bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600",
-                                )}
-                              >
-                                {g}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
                         <div className="space-y-4">
-                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-2">
-                            Materias Impartidas
-                          </label>
-                          <div className="flex bg-slate-900 border border-slate-800 p-1 rounded-xl">
-                            {(["1", "2", "3"] as Year[]).map((year) => (
-                              <button
-                                key={year}
-                                onClick={() => setAssignmentModal(prev => ({ ...prev, activeYear: year }))}
-                                className={cn(
-                                  "flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all",
-                                  assignmentModal.activeYear === year
-                                    ? "bg-slate-800 text-white shadow-md"
-                                    : "text-slate-500 hover:text-slate-400"
-                                )}
-                              >
-                                {year === "1" ? "Primero" : year === "2" ? "Segundo" : "Tercero"}
-                              </button>
-                            ))}
-                          </div>
-                          <div className="flex flex-col gap-4 max-h-[200px] overflow-y-auto pr-2 no-scrollbar">
-                            <div className="grid grid-cols-2 gap-2">
-                              {ACADEMIC_CONTENT[assignmentModal.activeYear].map((subject) => (
+                          <div className="flex justify-between items-center px-2">
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                Asignar Materias y Grupos
+                              </label>
+                              <p className="text-[8px] font-bold text-indigo-400 uppercase tracking-wider">Paso 1: Elige Año. Paso 2: Elige Materia. Paso 3: Elige Grupo.</p>
+                            </div>
+                            <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800">
+                              {(["1", "2", "3"] as Year[]).map((year) => (
                                 <button
-                                  key={subject.id}
-                                  onClick={() =>
-                                    setAssignmentModal((prev) => ({
-                                      ...prev,
-                                      selectedSubjects: prev.selectedSubjects.includes(subject.id)
-                                        ? prev.selectedSubjects.filter((x) => x !== subject.id)
-                                        : [...prev.selectedSubjects, subject.id],
-                                    }))
-                                  }
+                                  key={year}
+                                  onClick={() => setAssignmentModal(prev => ({ ...prev, activeYear: year }))}
                                   className={cn(
-                                    "p-3 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all text-left flex flex-col gap-1",
-                                    assignmentModal.selectedSubjects.includes(subject.id)
-                                      ? "bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-500/20"
-                                      : "bg-slate-800/50 border-slate-700/50 text-slate-400 hover:border-slate-700 hover:bg-slate-800",
+                                    "px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all",
+                                    assignmentModal.activeYear === year
+                                      ? "bg-slate-800 text-white shadow-md"
+                                      : "text-slate-500 hover:text-slate-400"
                                   )}
                                 >
-                                  <span>{subject.name}</span>
+                                  {year}º
                                 </button>
                               ))}
                             </div>
+                          </div>
+                          
+                          <div className="space-y-3 max-h-[350px] overflow-y-auto pr-2 transform-gpu scrollbar-thin scrollbar-thumb-slate-800">
+                            {(ACADEMIC_CONTENT[assignmentModal.activeYear] || []).map((subject) => {
+                              const isSubjectSelected = assignmentModal.selectedSubjects.some(s => s === subject.id || s.startsWith(`${subject.id}:`));
+                              return (
+                                <div key={subject.id} className={cn(
+                                  "rounded-2xl border transition-all overflow-hidden",
+                                  isSubjectSelected ? "bg-slate-800/40 border-indigo-500/30" : "bg-slate-800/10 border-slate-800"
+                                )}>
+                                  <button
+                                    onClick={() => {
+                                      setAssignmentModal((prev) => {
+                                        const alreadySelected = prev.selectedSubjects.some(s => s === subject.id || s.startsWith(`${subject.id}:`));
+                                        if (alreadySelected) {
+                                          return {
+                                            ...prev,
+                                            selectedSubjects: prev.selectedSubjects.filter(s => s !== subject.id && !s.startsWith(`${subject.id}:`))
+                                          };
+                                        } else {
+                                          return {
+                                            ...prev,
+                                            selectedSubjects: [...prev.selectedSubjects, subject.id]
+                                          };
+                                        }
+                                      });
+                                    }}
+                                    className="w-full p-4 flex items-center justify-between group"
+                                  >
+                                    <div className="flex items-center gap-3">
+                                      <div className={cn(
+                                        "w-8 h-8 rounded-lg flex items-center justify-center transition-all",
+                                        isSubjectSelected ? "bg-indigo-500 text-white" : "bg-slate-800 text-slate-500 group-hover:bg-slate-700"
+                                      )}>
+                                        <BookOpen size={16} />
+                                      </div>
+                                      <span className={cn(
+                                        "text-xs font-black uppercase tracking-widest",
+                                        isSubjectSelected ? "text-white" : "text-slate-400"
+                                      )}>{subject.name}</span>
+                                    </div>
+                                    <div className={cn(
+                                      "w-5 h-5 rounded-md border flex items-center justify-center transition-all",
+                                      isSubjectSelected ? "bg-indigo-500 border-indigo-500" : "border-slate-700"
+                                    )}>
+                                      {isSubjectSelected && <Check size={12} className="text-white" />}
+                                    </div>
+                                  </button>
+
+                                  {isSubjectSelected && (
+                                    <div className="px-4 pb-4 pt-1 space-y-2 border-t border-slate-800/50">
+                                      <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest ml-1">Elegir Grupos:</p>
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {SCHOOL_GROUPS.filter(g => g.startsWith(assignmentModal.activeYear)).map(g => {
+                                          const isMapped = assignmentModal.selectedSubjects.includes(`${subject.id}:${g}`);
+                                          // Also consider it selected if subject.id is there (legacy format means "all groups of this year")
+                                          // but we want to encourage specific mapping now
+                                          const isActive = isMapped || (assignmentModal.selectedSubjects.includes(subject.id) && g.startsWith(assignmentModal.activeYear));
+                                          
+                                          return (
+                                            <button
+                                              key={g}
+                                              onClick={() => {
+                                                setAssignmentModal(prev => {
+                                                  const newSubs = [...prev.selectedSubjects];
+                                                  const mapping = `${subject.id}:${g}`;
+                                                  
+                                                  // If base subject is there, it implies all groups. 
+                                                  // Let's replace base subject with specific mappings to be more granular as requested.
+                                                  let filtered = newSubs.filter(s => s !== subject.id);
+                                                  
+                                                  if (filtered.includes(mapping)) {
+                                                    filtered = filtered.filter(s => s !== mapping);
+                                                  } else {
+                                                    filtered.push(mapping);
+                                                  }
+
+                                                  return { ...prev, selectedSubjects: filtered };
+                                                });
+                                              }}
+                                              className={cn(
+                                                "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest border transition-all",
+                                                isActive 
+                                                  ? "bg-emerald-500/20 border-emerald-500 text-emerald-400 shadow-lg shadow-emerald-500/10"
+                                                  : "bg-slate-900 border-slate-800 text-slate-500 hover:border-slate-700"
+                                              )}
+                                            >
+                                              {g}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       </div>
 
                       <button
                         onClick={() => {
-                          if (assignmentModal.selectedGroups.length === 0 && assignmentModal.selectedSubjects.length === 0) {
-                            alert(
-                              "Por favor selecciona al menos un grupo o materia.",
+                          if (assignmentModal.selectedSubjects.length === 0) {
+                            toast.error(
+                              "Por favor selecciona al menos una materia y su grupo.",
                             );
                             return;
                           }
-                          setTeachers((prev) =>
-                            prev.map((t) =>
-                              t.id === assignmentModal.teacherId
-                                ? {
-                                    ...t,
-                                    status: "Active",
-                                    groups: assignmentModal.selectedGroups,
-                                    subjects: assignmentModal.selectedSubjects,
-                                    students: assignmentModal.selectedGroups.length * 30, // Estimación
-                                  }
-                                : t,
-                            ),
-                          );
-                          alert(
-                            `Asignación actualizada exitosamente.`,
-                          );
-                          setAssignmentModal({
-                            teacherId: null,
-                            isOpen: false,
-                            selectedGroups: [],
-                            selectedSubjects: [],
-                            activeYear: "1",
-                          });
+                          if (assignmentModal.teacherId) {
+                            const newSubjects = assignmentModal.selectedSubjects;
+                            const derivedGroupsFromSubjects = newSubjects
+                              .filter(s => s.includes(':'))
+                              .map(s => s.split(':')[1] as Grade);
+                            
+                            // Groups are now strictly derived from subject mappings to prevent "broadcasting"
+                            const newGroups = Array.from(new Set(derivedGroupsFromSubjects));
+                            
+                            const updatePromise = supabaseService.updateUserStats(assignmentModal.teacherId, {
+                              assignedGroups: newGroups,
+                              assignedSubjects: newSubjects
+                            });
+
+                            toast.promise(updatePromise, {
+                              loading: 'Guardando cambios...',
+                              success: () => {
+                                loadUsers();
+                                
+                                // If current user is the one being updated, update local stats too
+                                if (assignmentModal.teacherId === currentUserId || assignmentModal.teacherId === stats.id) {
+                                  setStats(prev => ({
+                                    ...prev,
+                                    assignedGroups: newGroups,
+                                    assignedSubjects: newSubjects
+                                  }));
+                                }
+                                
+                                setAssignmentModal({
+                                  teacherId: null,
+                                  isOpen: false,
+                                  selectedGroups: [],
+                                  selectedSubjects: [],
+                                  activeYear: "1",
+                                });
+                                return `Asignación actualizada exitosamente.`;
+                              },
+                              error: 'Error al actualizar la asignación.'
+                            });
+                          }
                         }}
-                        className="w-full py-5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-3xl font-black uppercase tracking-widest text-xs shadow-xl active:scale-95 transition-all"
+                        className="w-full py-5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-3xl font-black uppercase tracking-widest text-xs shadow-md active:scale-95 transition-all shadow-cyan-600/20"
                       >
                         Confirmar Asignación
+                      </button>
+                    </div>
+                  </motion.div>
+                </div>
+              )}
+
+              {showCreateUserModal.isOpen && (
+                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-sm">
+                  <motion.div
+                    initial={{ scale: 0.95, opacity: 0, y: 20 }}
+                    animate={{ scale: 1, opacity: 1, y: 0 }}
+                    className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-[2.5rem] shadow-2xl overflow-hidden"
+                  >
+                    <div className="p-8 space-y-6">
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-cyan-500/10 rounded-2xl flex items-center justify-center text-cyan-400">
+                            <UserPlus size={20} />
+                          </div>
+                          <h3 className="text-xl font-black italic uppercase tracking-tighter text-white">
+                            Nuevo {showCreateUserModal.role === "Teacher" ? "Docente" : "Alumno"}
+                          </h3>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setShowCreateUserModal({ isOpen: false, role: "Teacher" });
+                            setCreateUserForm({ username: "", email: "", password: "", grade: "" });
+                          }}
+                          className="w-8 h-8 bg-slate-800 rounded-full flex items-center justify-center text-slate-500 hover:text-white transition-colors"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Nombre Completo</label>
+                          <input 
+                            type="text"
+                            value={createUserForm.username}
+                            onChange={(e) => setCreateUserForm(prev => ({ ...prev, username: e.target.value }))}
+                            placeholder="Ej. Juan Pérez"
+                            className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500/50 outline-none transition-all placeholder:text-slate-700"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Correo Electrónico</label>
+                          <input 
+                            type="email"
+                            value={createUserForm.email}
+                            onChange={(e) => setCreateUserForm(prev => ({ ...prev, email: e.target.value }))}
+                            placeholder="correo@ejemplo.com"
+                            className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500/50 outline-none transition-all placeholder:text-slate-700 font-mono"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Contraseña</label>
+                          <input 
+                            type="password"
+                            value={createUserForm.password}
+                            onChange={(e) => setCreateUserForm(prev => ({ ...prev, password: e.target.value }))}
+                            placeholder="••••••••"
+                            className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500/50 outline-none transition-all placeholder:text-slate-700 font-mono"
+                          />
+                        </div>
+                        {showCreateUserModal.role === "Student" && (
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Grado/Grupo Primario</label>
+                            <input 
+                              type="text"
+                              value={createUserForm.grade}
+                              onChange={(e) => setCreateUserForm(prev => ({ ...prev, grade: e.target.value }))}
+                              placeholder="Ej. 1A"
+                              className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500/50 outline-none transition-all placeholder:text-slate-700 uppercase"
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      <button
+                        disabled={isCreatingUser || !createUserForm.email || !createUserForm.password || !createUserForm.username}
+                        onClick={async () => {
+                          setIsCreatingUser(true);
+                          try {
+                            await supabaseService.adminCreateUser({
+                              email: createUserForm.email,
+                              password: createUserForm.password,
+                              username: createUserForm.username,
+                              role: showCreateUserModal.role,
+                              grade: createUserForm.grade || '1',
+                              assignedGroups: []
+                            });
+                            
+                            toast.success(`¡${showCreateUserModal.role === "Teacher" ? "Docente" : "Alumno"} creado exitosamente!`);
+                            setShowCreateUserModal({ isOpen: false, role: "Teacher" });
+                            setCreateUserForm({ username: "", email: "", password: "", grade: "" });
+                            loadUsers();
+                          } catch (err: any) {
+                            toast.error(`Error: ${err.message || "No se pudo crear el usuario"}`);
+                          } finally {
+                            setIsCreatingUser(false);
+                          }
+                        }}
+                        className={cn(
+                          "w-full py-5 rounded-2xl font-black uppercase tracking-widest text-xs transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2",
+                          isCreatingUser || !createUserForm.email || !createUserForm.password || !createUserForm.username
+                            ? "bg-slate-800 text-slate-600 cursor-not-allowed"
+                            : "bg-cyan-600 hover:bg-cyan-500 text-white shadow-cyan-500/20"
+                        )}
+                      >
+                        {isCreatingUser ? (
+                          <>
+                            <Loader2 size={16} className="animate-spin" />
+                            Creando...
+                          </>
+                        ) : (
+                          `Crear ${showCreateUserModal.role === "Teacher" ? "Docente" : "Alumno"}`
+                        )}
+                      </button>
+                    </div>
+                  </motion.div>
+                </div>
+              )}
+
+              {userToDelete && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/95 backdrop-blur-md">
+                  <motion.div
+                    initial={{ scale: 0.9, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-[3rem] shadow-2xl overflow-hidden p-8 space-y-8"
+                  >
+                    <div className="text-center space-y-4">
+                      <div className="w-20 h-20 bg-rose-500/10 rounded-[2rem] flex items-center justify-center text-rose-500 mx-auto">
+                        <Trash2 size={40} />
+                      </div>
+                      <div className="space-y-2">
+                        <h3 className="text-2xl font-black italic uppercase tracking-tighter text-white">
+                          ¿Confirmar Borrado?
+                        </h3>
+                        <p className="text-slate-400 text-sm font-medium leading-relaxed">
+                          Estás a punto de borrar a <span className="text-white font-bold">{userToDelete.name}</span> ({userToDelete.role}). Esta acción no se puede deshacer.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-3">
+                      <button
+                        disabled={isDeletingUser}
+                        onClick={async () => {
+                          setIsDeletingUser(true);
+                          try {
+                            await supabaseService.deleteUser(userToDelete.id);
+                            toast.success(`${userToDelete.role} eliminado con éxito.`);
+                            setUserToDelete(null);
+                            loadUsers();
+                          } catch (err: any) {
+                            toast.error(`Error: ${err.message}`);
+                          } finally {
+                            setIsDeletingUser(false);
+                          }
+                        }}
+                        className="w-full py-5 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl font-black uppercase tracking-widest text-xs transition-all shadow-lg shadow-rose-600/20 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        {isDeletingUser ? (
+                          <>
+                            <Loader2 size={16} className="animate-spin" />
+                            Borrando...
+                          </>
+                        ) : (
+                          "SÍ, ELIMINAR AHORA"
+                        )}
+                      </button>
+                      <button
+                        disabled={isDeletingUser}
+                        onClick={() => setUserToDelete(null)}
+                        className="w-full py-5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-2xl font-black uppercase tracking-widest text-xs transition-all active:scale-95 disabled:opacity-50"
+                      >
+                        CANCELAR
                       </button>
                     </div>
                   </motion.div>

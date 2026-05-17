@@ -45,16 +45,16 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
       }]
     },
     {
-      id: 'fis_1',
-      name: 'Física',
-      icon: 'Zap',
+      id: 'bio_1',
+      name: 'Biología',
+      icon: 'Activity',
       topics: [{
-        id: 't_fis_1',
-        name: 'Materia y Energía',
+        id: 't_bio_1',
+        name: 'Seres Vivos',
         tasks: [
-          { id: 'task_fis_1_basic', title: 'Quiz IA: Átomos', description: 'Fundamentos de la materia.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
-          { id: 'task_fis_1_inter', title: 'Estados de Agregación', description: 'Experimento casero con agua.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
-          { id: 'task_fis_1_hard', title: 'Energía Solar', description: 'Calcula el ahorro de un panel solar.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_bio_1_basic', title: 'Quiz IA: Células', description: 'Fundamentos de la vida.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
+          { id: 'task_bio_1_inter', title: 'Cadena Alimenticia', description: 'Dibuja un ecosistema local.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
+          { id: 'task_bio_1_hard', title: 'Proyecto Herbario', description: 'Colecciona y clasifica 5 hojas.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
         ]
       }]
     },
@@ -87,16 +87,16 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
       }]
     },
     {
-      id: 'ef_1',
-      name: 'Educación Física',
-      icon: 'Activity',
+      id: 'geo_1',
+      name: 'Geografía',
+      icon: 'MapPin',
       topics: [{
-        id: 't_ef_1',
-        name: 'Desarrollo Motriz',
+        id: 't_geo_1',
+        name: 'Espacio Geográfico',
         tasks: [
-          { id: 'task_ef_1_basic', title: 'Quiz IA: Anatomía', description: 'Músculos principales del cuerpo.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
-          { id: 'task_ef_1_inter', title: 'Circuito de Salto', description: 'Realiza una serie de 10 saltos.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
-          { id: 'task_ef_1_hard', title: 'Maratón Escolar', description: 'Registra una caminata de 2km.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_geo_1_basic', title: 'Quiz IA: Mapas', description: 'Coordenadas y proyecciones.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
+          { id: 'task_geo_1_inter', title: 'Relieve Regional', description: 'Identifica montañas cercanas.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
+          { id: 'task_geo_1_hard', title: 'Planisferio Político', description: 'Ubica los 10 países con más población.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
         ]
       }]
     },
@@ -125,6 +125,20 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
           { id: 'task_art_1_basic', title: 'Quiz IA: Color', description: 'Círculo cromático básico.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
           { id: 'task_art_1_inter', title: 'Puntillismo', description: 'Crea una obra usando solo puntos.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
           { id: 'task_art_1_hard', title: 'Escultura Reciclada', description: 'Usa cartón para crear un animal.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+        ]
+      }]
+    },
+    {
+      id: 'int_cur_1',
+      name: 'Integración Curricular',
+      icon: 'LayoutGrid',
+      topics: [{
+        id: 't_int_cur_1',
+        name: 'Transversalidad',
+        tasks: [
+          { id: 'task_int_cur_1_basic', title: 'Reto Integrador', description: 'Propón una solución que use 2 materias.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
+          { id: 'task_int_cur_1_inter', title: 'Proyecto de Vida', description: 'Mapa mental de tus metas escolares.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
+          { id: 'task_int_cur_1_hard', title: 'Feria de Ciencias', description: 'Presenta un experimento integral.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
         ]
       }]
     }
@@ -215,20 +229,6 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
       }]
     },
     {
-      id: 'ef_2',
-      name: 'Educación Física',
-      icon: 'Activity',
-      topics: [{
-        id: 't_ef_2',
-        name: 'Deportes de Conjunto',
-        tasks: [
-          { id: 'task_ef_2_basic', title: 'Quiz IA: Reglas Fútbol', description: 'Conocimientos de cancha.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
-          { id: 'task_ef_2_inter', title: 'Dominadas', description: 'Graba 5 dominadas seguidas.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
-          { id: 'task_ef_2_hard', title: 'Entrenamiento Local', description: 'Entrena a un equipo infantil.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
-        ]
-      }]
-    },
-    {
       id: 'ing_2',
       name: 'Inglés',
       icon: 'Languages',
@@ -253,6 +253,20 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
           { id: 'task_art_2_basic', title: 'Quiz IA: Danza Folklore', description: 'Ritmos regionales de México.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
           { id: 'task_art_2_inter', title: 'Coreografía Corta', description: '30 segundos de baile libre.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
           { id: 'task_art_2_hard', title: 'Vestuario Ancestral', description: 'Dibuja y explica un traje típico.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+        ]
+      }]
+    },
+    {
+      id: 'int_cur_2',
+      name: 'Integración Curricular',
+      icon: 'LayoutGrid',
+      topics: [{
+        id: 't_int_cur_2',
+        name: 'Transversalidad',
+        tasks: [
+          { id: 'task_int_cur_2_basic', title: 'Reto Integrador', description: 'Propón una solución que use 2 materias.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
+          { id: 'task_int_cur_2_inter', title: 'Proyecto de Vida', description: 'Mapa mental de tus metas escolares.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
+          { id: 'task_int_cur_2_hard', title: 'Feria de Ciencias', description: 'Presenta un experimento integral.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
         ]
       }]
     }
@@ -301,16 +315,16 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
       }]
     },
     {
-      id: 'fis_3',
-      name: 'Física',
-      icon: 'Zap',
+      id: 'qui_3',
+      name: 'Química',
+      icon: 'Beaker',
       topics: [{
-        id: 't_fis_3',
-        name: 'Magnetismo y Ondas',
+        id: 't_qui_3',
+        name: 'Las Propiedades de los Materiales',
         tasks: [
-          { id: 'task_fis_3_basic', title: 'Quiz IA: Newton', description: 'Las 3 leyes del movimiento.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
-          { id: 'task_fis_3_inter', title: 'Motor Eléctrico', description: 'Construye un motor simple (DC).', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
-          { id: 'task_fis_3_hard', title: 'Telescopio Casero', description: 'Óptica y refracción.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_qui_3_basic', title: 'Quiz IA: Tabla Periódica', description: 'Elementos y sus símbolos.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
+          { id: 'task_qui_3_inter', title: 'Mezclas y Compuestos', description: 'Experimento de separación de mezclas.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
+          { id: 'task_qui_3_hard', title: 'Reacciones Químicas', description: 'Explica el proceso de oxidación (video).', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
         ]
       }]
     },
@@ -343,20 +357,6 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
       }]
     },
     {
-      id: 'ef_3',
-      name: 'Educación Física',
-      icon: 'Activity',
-      topics: [{
-        id: 't_ef_3',
-        name: 'Salud y Nutrición',
-        tasks: [
-          { id: 'task_ef_3_basic', title: 'Quiz IA: Nutrientes', description: 'Carbohidratos, grasas y proteínas.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
-          { id: 'task_ef_3_inter', title: 'Diario de Comidas', description: 'Registra 3 días de dieta.', difficulty: 'Medium', type: 'Exercise', reward: { tokens: 50 } },
-          { id: 'task_ef_3_hard', title: 'Challenge CrossFit', description: 'Realiza 20 burpees en 1 min.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
-        ]
-      }]
-    },
-    {
       id: 'ing_3',
       name: 'Inglés',
       icon: 'Languages',
@@ -381,6 +381,20 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
           { id: 'task_art_3_basic', title: 'Quiz IA: Dramaturgia', description: 'Autores clásicos universales.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
           { id: 'task_art_3_inter', title: 'Monólogo', description: 'Interpreta un fragmento de Hamlet.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
           { id: 'task_art_3_hard', title: 'Producción Audiovisual', description: 'Edita un corto de 5 minutos.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+        ]
+      }]
+    },
+    {
+      id: 'int_cur_3',
+      name: 'Integración Curricular',
+      icon: 'LayoutGrid',
+      topics: [{
+        id: 't_int_cur_3',
+        name: 'Transversalidad',
+        tasks: [
+          { id: 'task_int_cur_3_basic', title: 'Reto Integrador', description: 'Propón una solución que use 2 materias.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
+          { id: 'task_int_cur_3_inter', title: 'Proyecto de Vida', description: 'Mapa mental de tus metas escolares.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
+          { id: 'task_int_cur_3_hard', title: 'Feria de Ciencias', description: 'Presenta un experimento integral.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
         ]
       }]
     }
@@ -746,8 +760,8 @@ export const INITIAL_CARDS: Card[] = [
   },
   {
     id: 'achiev_11',
-    name: 'Atleta Digital',
-    description: 'Registra y aprueba 5 desafíos de Educación Física.',
+    name: 'Explorador Natural',
+    description: 'Registra y aprueba 5 desafíos de Biología o Geografía.',
     category: 'Achievement',
     rarity: 'Rare',
     imageUrl: 'https://images.unsplash.com/photo-1517649763962-0c623066013b?w=400&h=600&fit=crop',
@@ -908,7 +922,7 @@ export const INITIAL_CARDS: Card[] = [
   }
 ];
 
-export const SCHOOL_GROUPS = ['1A', '1B', '1C', '1D', '2A', '2B', '2C', '2D', '3A', '3B', '3C', '3D'];
+export const SCHOOL_GROUPS: Grade[] = ['1A', '1B', '1C', '1D', '2A', '2B', '2C', '2D', '3A', '3B', '3C', '3D'];
 
 const FIRST_NAMES = ["Sofía", "Mateo", "Valeria", "Diego", "Camila", "Santiago", "Isabella", "Matias", "Valentina", "Sebastián", "Luciana", "Nicolás", "Mariana", "Emiliano", "Renata", "Alejandro", "Victoria", "Leonardo", "Daniela", "Gael", "Mia", "Daniel", "Ximena", "Joaquín", "Regina", "Tomás", "Julieta", "Lucas", "Andrea", "Samuel", "María", "David", "Ana", "Martín", "Samantha", "Gabriel"];
 const LAST_NAMES = ["Méndez", "López", "Rojas", "Torres", "Paz", "García", "Martínez", "Rodríguez", "Hernández", "González", "Pérez", "Sánchez", "Romero", "Ramírez", "Cruz", "Gómez", "Flores", "Morales", "Vázquez", "Jiménez", "Reyes", "Díaz", "Castillo", "Ortiz", "Moreno", "Álvarez", "Ruiz", "Navarro", "Gutiérrez", "Salazar"];

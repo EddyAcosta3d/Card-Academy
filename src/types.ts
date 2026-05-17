@@ -15,7 +15,7 @@ export interface Card {
 }
 
 export type Year = '1' | '2' | '3';
-export type Grade = '1A' | '1B' | '1C' | '1D' | '2A' | '2B' | '2C' | '2D' | '3A' | '3B' | '3C' | '3D';
+export type Grade = '1A' | '1B' | '1C' | '1D' | '2A' | '2B' | '2C' | '2D' | '3A' | '3B' | '3C' | '3D' | 'Cuerpo Académico' | 'Administración';
 export type UserRole = 'Student' | 'Teacher' | 'Admin';
 
 export interface Task {
@@ -54,6 +54,7 @@ export interface DailyLimits {
   easyCompleted: number;
   mediumCompleted: number;
   hardCompleted: number;
+  totalCompleted?: number;
 }
 
 export interface PackCurrencies {
@@ -64,6 +65,7 @@ export interface PackCurrencies {
 }
 
 export interface UserStats {
+  id?: string; // Supabase ID
   grade: Grade;
   role: UserRole;
   originalRole?: UserRole; // Track original login role
@@ -75,8 +77,11 @@ export interface UserStats {
   collection: string[]; // Card IDs
   unstickedCards?: string[]; // Pending to be sticked into album
   completedTasks: string[]; // Task IDs
+  pendingTasks?: string[]; // Task IDs waiting for review
   dailyLimits?: DailyLimits;
   packCurrencies?: PackCurrencies;
+  // Real-time tracking
+  lastActive?: string;
 }
 
 export interface Challenge {

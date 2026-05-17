@@ -42,7 +42,7 @@ export const DailyChallenge: React.FC<DailyChallengeProps> = ({ challenge, onCom
         <div className="flex justify-between items-center mb-6 sm:mb-10">
           <div className="flex items-center gap-2 sm:gap-3 bg-indigo-500/10 px-3 sm:px-5 py-1.5 sm:py-2 rounded-full border border-indigo-500/20">
             <Brain className="text-indigo-400" size={14} />
-            <span className="text-[10px] sm:text-xs font-black text-indigo-300 uppercase tracking-[0.1em] sm:tracking-[0.2em]">{challenge.subject}</span>
+            <span className="text-[10px] sm:text-xs font-black text-cyan-400 uppercase tracking-[0.1em] sm:tracking-[0.2em]">{challenge.subject}</span>
           </div>
           <div className="flex items-center gap-2 text-slate-500 font-black text-[10px] sm:text-xs tracking-widest uppercase">
              {isCompleted ? (
