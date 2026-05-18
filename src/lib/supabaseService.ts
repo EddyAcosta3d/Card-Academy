@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { UserStats, Grade, UserRole, Card as CardType } from '../types';
+import { UserStats, Grade, UserRole, Card as CardType, AppNotification } from '../types';
 
 // Helper para generar correos válidos a partir de nombres de usuario (con espacios, acentos, etc.)
 const normalizeEmail = (username: string) => {
@@ -516,5 +516,76 @@ export const supabaseService = {
     return await supabase.auth.updateUser({
       password: newPassword
     });
+  },
+
+  // Notifications
+  async fetchNotifications(userId: string): Promise<AppNotification[]> {
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[Supabase] Error fetching notifications:', error.message);
+      return [];
+    }
+
+    return data.map(n => ({
+      id: n.id,
+      userId: n.user_id,
+      title: n.title,
+      message: n.message,
+      type: n.type,
+      isRead: n.is_read,
+      createdAt: n.created_at
+    }));
+  },
+
+  async markNotificationAsRead(notificationId: string) {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('id', notificationId);
+    
+    if (error) throw error;
+  },
+
+  async markAllNotificationsAsRead(userId: string) {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('user_id', userId)
+      .eq('is_read', false);
+    
+    if (error) throw error;
+  },
+
+  async sendNotification(userId: string, title: string, message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') {
+    const { error } = await supabase
+      .from('notifications')
+      .insert({
+        user_id: userId,
+        title,
+        message,
+        type,
+        is_read: false
+      });
+    
+    if (error) {
+      console.error('[Supabase] Error sending notification:', error.message);
+      // Fallback a localStorage para que al menos se vea en la sesión actual si falla la red
+      const localNotifs = JSON.parse(localStorage.getItem('cardacademy_local_notifs') || '[]');
+      localNotifs.push({
+        id: `local_${Date.now()}`,
+        userId,
+        title,
+        message,
+        type,
+        isRead: false,
+        createdAt: new Date().toISOString()
+      });
+      localStorage.setItem('cardacademy_local_notifs', JSON.stringify(localNotifs));
+    }
   }
 };

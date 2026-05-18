@@ -924,47 +924,6 @@ export const INITIAL_CARDS: Card[] = [
 
 export const SCHOOL_GROUPS: Grade[] = ['1A', '1B', '1C', '1D', '2A', '2B', '2C', '2D', '3A', '3B', '3C', '3D'];
 
-const FIRST_NAMES = ["Sofía", "Mateo", "Valeria", "Diego", "Camila", "Santiago", "Isabella", "Matias", "Valentina", "Sebastián", "Luciana", "Nicolás", "Mariana", "Emiliano", "Renata", "Alejandro", "Victoria", "Leonardo", "Daniela", "Gael", "Mia", "Daniel", "Ximena", "Joaquín", "Regina", "Tomás", "Julieta", "Lucas", "Andrea", "Samuel", "María", "David", "Ana", "Martín", "Samantha", "Gabriel"];
-const LAST_NAMES = ["Méndez", "López", "Rojas", "Torres", "Paz", "García", "Martínez", "Rodríguez", "Hernández", "González", "Pérez", "Sánchez", "Romero", "Ramírez", "Cruz", "Gómez", "Flores", "Morales", "Vázquez", "Jiménez", "Reyes", "Díaz", "Castillo", "Ortiz", "Moreno", "Álvarez", "Ruiz", "Navarro", "Gutiérrez", "Salazar"];
-
-const MOCK_AVATARS = [
-  'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150',
-  'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150',
-  'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
-  'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
-  'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150',
-  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-  'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150',
-  'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=150',
-  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
-  'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?w=150',
-];
-
-export const MOCK_STUDENTS = SCHOOL_GROUPS.flatMap((group, groupIdx) => {
-  return Array.from({ length: 15 }).map((_, i) => {
-    const id = `s_${group}_${i}`;
-    const name = `${FIRST_NAMES[(groupIdx * 15 + i) % FIRST_NAMES.length]} ${LAST_NAMES[(groupIdx * 15 + i) % LAST_NAMES.length]}`;
-    const avatar = MOCK_AVATARS[(groupIdx * 15 + i) % MOCK_AVATARS.length];
-    
-    const streak = Math.floor(Math.random() * 20);
-    const tokens = Math.floor(Math.random() * 2000) + 100;
-    
-    // Simulate some completed tasks
-    const completedTasks = [`task_esp_${group.charAt(0)}_basic`, `task_mat_${group.charAt(0)}_basic`];
-
-    return {
-      id,
-      name,
-      grade: group,
-      avatar,
-      collection: [], 
-      completedTasks,
-      streak,
-      tokens
-    };
-  });
-});
-
 export const RARITY_CONFIG = {
   Common: { color: 'border-slate-800', lightColor: 'text-slate-400', shadow: 'shadow-slate-900/10' },
   Rare: { color: 'border-blue-500/50', lightColor: 'text-blue-400', shadow: 'shadow-blue-500/20' },

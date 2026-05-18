@@ -92,6 +92,7 @@ import {
   UserRole,
   Pack,
   Year,
+  AppNotification
 } from "./types";
 import {
   INITIAL_CARDS,
@@ -109,7 +110,8 @@ import { supabaseService } from "./lib/supabaseService";
 export type Student = {
   id: string;
   name: string;
-  grade: string;
+  username: string;
+  grade: Grade;
   avatar?: string;
   collection: string[];
   completedTasks: string[];
@@ -128,8 +130,6 @@ export type TeacherModel = {
   status: string;
   lastActive?: string;
 };
-
-const MOCK_TEACHERS: TeacherModel[] = [];
 
 const SubjectIcon = ({ name, size = 28 }: { name: string; size?: number }) => {
   const icons: Record<string, any> = {
@@ -300,6 +300,7 @@ export default function App() {
   const [stats, setStats] = useState<UserStats>(defaultStats);
   const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
 
   // Heartbeat for real-time status
   useEffect(() => {
@@ -315,6 +316,22 @@ export default function App() {
     
     return () => clearInterval(interval);
   }, [currentUserId]);
+
+  const loadNotifications = React.useCallback(async () => {
+    if (!currentUserId) return;
+    try {
+      const realTimeNotifs = await supabaseService.fetchNotifications(currentUserId);
+      setNotifications(realTimeNotifs);
+    } catch (error) {
+      console.error("Error loading notifications:", error);
+    }
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (currentUserId && isNotificationsOpen) {
+      loadNotifications();
+    }
+  }, [currentUserId, isNotificationsOpen, loadNotifications]);
 
   const [teachers, setTeachers] = useState<TeacherModel[]>([]);
   const [globalStudents, setGlobalStudents] = useState<Student[]>([]);
@@ -361,7 +378,7 @@ export default function App() {
   }, []);
 
   // NEW admin state
-  const [allStudents, setAllStudents] = useState<UserStats[]>([]);
+  const [rawStudents, setRawStudents] = useState<UserStats[]>([]);
   const [masterTeacherKey, setMasterTeacherKey] = useState(() => {
     return localStorage.getItem('masterTeacherKey') || "DOCENTE-2026";
   });
@@ -379,11 +396,12 @@ export default function App() {
     try {
       const users = await supabaseService.fetchAllUsers();
       
-      setAllStudents(users.filter(u => u.role === 'Student'));
+      setRawStudents(users.filter(u => u.role === 'Student'));
 
       const computeStudents: Student[] = users.filter(u => u.role === 'Student').map(s => ({
           id: s.id || s.username || '',
           name: s.username || 'Alumno',
+          username: s.username || 'Alumno',
           grade: s.grade || '2A',
           collection: s.collection || [],
           completedTasks: s.completedTasks || [],
@@ -418,7 +436,7 @@ export default function App() {
     }
   }, [loadUsers, adminDashboardTab, isAuthenticated, stats.role]);
 
-  const MOCK_STUDENTS = React.useMemo(() => {
+  const allStudents = React.useMemo(() => {
       const map = new Map<string, Student>();
       // Always include current real students from Supabase
       globalStudents.forEach(s => map.set(s.id, s));
@@ -978,7 +996,14 @@ export default function App() {
                         <span className="text-[10px] uppercase text-cyan-400 font-black tracking-widest sm:hidden">Alum.</span>
                         <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-lg"></div>
                         <span className="text-indigo-400 font-black font-mono text-xs tracking-tighter truncate">
-                          {globalStudents.filter(s => stats.assignedGroups.includes(s.grade) && ((s.tokens % 3 === 0) || (s.streak > 8))).length}
+                          {globalStudents.filter(s => {
+                            const isAssigned = stats.assignedGroups.includes(s.grade);
+                            if (!isAssigned) return false;
+                            if (!s.lastActive) return false;
+                            const lastSeen = new Date(s.lastActive).getTime();
+                            const now = Date.now();
+                            return (now - lastSeen) < 300000; // 5 minutes
+                          }).length}
                         </span>
                       </div>
                     </div>
@@ -1015,7 +1040,14 @@ export default function App() {
                         </span>
                         <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-lg"></div>
                         <span className="text-indigo-400 font-black font-mono text-base tracking-tighter truncate">
-                          {globalStudents.filter(s => stats.assignedGroups.includes(s.grade) && ((s.tokens % 3 === 0) || (s.streak > 8))).length}
+                          {globalStudents.filter(s => {
+                            const isAssigned = stats.assignedGroups.includes(s.grade);
+                            if (!isAssigned) return false;
+                            if (!s.lastActive) return false;
+                            const lastSeen = new Date(s.lastActive).getTime();
+                            const now = Date.now();
+                            return (now - lastSeen) < 300000; // 5 minutes
+                          }).length}
                         </span>
                       </div>
                     </div>
@@ -1030,7 +1062,9 @@ export default function App() {
                       className="relative p-2 text-slate-400 hover:text-white transition-colors rounded-full hover:bg-slate-800"
                     >
                       <Bell size={20} />
-                      <span className="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full animate-pulse" />
+                      {notifications.filter(n => !n.isRead).length > 0 && (
+                        <span className="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full animate-pulse" />
+                      )}
                     </button>
 
                     <AnimatePresence>
@@ -1057,123 +1091,79 @@ export default function App() {
                                   : "border-emerald-500/50 shadow-emerald-500/20"
                             )}
                           >
-                          <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-800/40">
-                            <h3 className="font-black text-slate-100 uppercase tracking-widest text-[10px]">
-                              Notificaciones
-                            </h3>
-                            <span className="bg-rose-500/10 text-rose-400 px-2 py-0.5 rounded-full text-[8px] font-black tracking-widest">
-                              2 NUEVAS
-                            </span>
-                          </div>
-                          <div className="max-h-[60vh] overflow-y-auto transform-gpu no-scrollbar bg-slate-900">
-                            {stats.role === "Student" ? (
-                              <>
-                                <div className="p-4 border-b border-slate-800/50 hover:bg-slate-800 transition-colors cursor-pointer group">
-                                  <p className="text-xs text-slate-300 font-medium leading-relaxed">
-                                    El profesor{" "}
-                                    <span className="font-bold text-indigo-400">
-                                      Juan Pérez
-                                    </span>{" "}
-                                    ha marcado tu desafío de Matemáticas como
-                                    completado.
-                                  </p>
-                                  <span className="text-[9px] text-slate-400 font-black uppercase mt-2 block tracking-widest group-hover:text-slate-300 transition-colors">
-                                    Hace 10 min
-                                  </span>
-                                </div>
-                                <div className="p-4 border-b border-slate-800/50 hover:bg-slate-800 transition-colors cursor-pointer group">
-                                  <p className="text-xs text-slate-300 font-medium leading-relaxed">
-                                    El profesor{" "}
-                                    <span className="font-bold text-rose-400">
-                                      Ana Gómez
-                                    </span>{" "}
-                                    no aprobó tu evidencia. Revisa los
-                                    comentarios.
-                                  </p>
-                                  <span className="text-[9px] text-slate-400 font-black uppercase mt-2 block tracking-widest group-hover:text-slate-300 transition-colors">
-                                    Hace 2 horas
-                                  </span>
-                                </div>
-                              </>
-                            ) : stats.role === "Teacher" ? (
-                              <>
-                                <div className="p-4 border-b border-slate-800/50 hover:bg-slate-800 transition-colors cursor-pointer group">
-                                  <p className="text-xs text-slate-300 font-medium leading-relaxed">
-                                    El alumno{" "}
-                                    <span className="font-bold text-emerald-400">
-                                      Carlos M.
-                                    </span>{" "}
-                                    ha subido evidencia para el desafío de
-                                    Física.
-                                  </p>
-                                  <span className="text-[9px] text-slate-500 font-black uppercase mt-2 block tracking-widest group-hover:text-slate-400 transition-colors">
-                                    Hace 5 min
-                                  </span>
-                                </div>
-                                <div className="p-4 border-b border-slate-800/50 hover:bg-slate-800 transition-colors cursor-pointer group">
-                                  <p className="text-xs text-slate-300 font-medium leading-relaxed">
-                                    El alumno{" "}
-                                    <span className="font-bold text-emerald-400">
-                                      Laura T.
-                                    </span>{" "}
-                                    ha subido evidencia para el desafío de
-                                    Química.
-                                  </p>
-                                  <span className="text-[9px] text-slate-500 font-black uppercase mt-2 block tracking-widest group-hover:text-slate-400 transition-colors">
-                                    Hace 1 hora
-                                  </span>
-                                </div>
-                              </>
-                            ) : (
-                              <>
-                                {JSON.parse(localStorage.getItem('cardacademy_admin_notifs') || '[]').reverse().map((n: any) => (
-                                  <div key={n.id} className="p-4 border-b border-slate-800/50 hover:bg-slate-800 transition-colors cursor-pointer group relative overflow-hidden">
-                                     <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500" />
-                                     <p className="text-xs text-slate-300 font-medium leading-relaxed">
-                                       <span className="text-emerald-400 font-bold">
-                                         [NUEVO ALUMNO]
-                                       </span>{" "}
-                                       El alumno <strong className="text-white">{n.student}</strong> se ha registrado en el grupo <strong className="text-white">{n.grade}</strong>.
-                                     </p>
-                                     <span className="text-[9px] text-slate-500 font-black uppercase mt-2 block tracking-widest group-hover:text-slate-400 transition-colors">
-                                        Hace un momento
-                                     </span>
-                                  </div>
-                                ))}
-                                <div className="p-4 border-b border-slate-800/50 hover:bg-slate-800 transition-colors cursor-pointer group relative overflow-hidden">
-                                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-amber-500" />
-                                  <p className="text-xs text-slate-300 font-medium leading-relaxed">
-                                    <span className="text-amber-400 font-bold">
-                                      [ALERTA]
-                                    </span>{" "}
-                                    El sistema de recompensas experimentó un
-                                    retraso al procesar el último lote.
-                                  </p>
-                                  <span className="text-[9px] text-slate-500 font-black uppercase mt-2 block tracking-widest group-hover:text-slate-400 transition-colors">
-                                    Hace 1 min
-                                  </span>
-                                </div>
-                                <div className="p-4 border-b border-slate-800/50 hover:bg-slate-800 transition-colors cursor-pointer group relative overflow-hidden">
-                                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-rose-500" />
-                                  <p className="text-xs text-slate-300 font-medium leading-relaxed">
-                                    <span className="text-rose-400 font-bold">
-                                      [REPORTE]
-                                    </span>{" "}
-                                    Un usuario ha reportado un problema con el
-                                    acceso a la colección.
-                                  </p>
-                                  <span className="text-[9px] text-slate-500 font-black uppercase mt-2 block tracking-widest group-hover:text-slate-400 transition-colors">
-                                    Hace 3 horas
-                                  </span>
-                                </div>
-                              </>
-                            )}
-                            <div className="p-3 text-center bg-slate-900">
-                              <button className="text-[10px] font-black uppercase tracking-widest text-cyan-400 hover:text-cyan-300 transition-colors py-2">
-                                Marcar todas como leídas
-                              </button>
+                            <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-800/40">
+                              <h3 className="font-black text-slate-100 uppercase tracking-widest text-[10px]">
+                                Notificaciones
+                              </h3>
+                              {notifications.filter(n => !n.isRead).length > 0 && (
+                                <span className="bg-rose-500 text-white px-2 py-0.5 rounded-full text-[8px] font-black tracking-widest">
+                                  {notifications.filter(n => !n.isRead).length} NUEVAS
+                                </span>
+                              )}
                             </div>
-                          </div>
+                            <div className="max-h-[60vh] overflow-y-auto transform-gpu no-scrollbar bg-slate-900 min-h-[100px]">
+                              {notifications.length === 0 ? (
+                                <div className="p-8 text-center">
+                                  <Bell size={32} className="mx-auto text-slate-700 mb-3 opacity-20" />
+                                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                                    No tienes notificaciones
+                                  </p>
+                                </div>
+                              ) : (
+                                notifications.map((n) => (
+                                  <div 
+                                    key={n.id} 
+                                    onClick={async () => {
+                                      if (!n.isRead) {
+                                        try {
+                                          await supabaseService.markNotificationAsRead(n.id);
+                                          loadNotifications();
+                                        } catch (e) {
+                                          console.error("Error marking as read:", e);
+                                        }
+                                      }
+                                    }}
+                                    className={cn(
+                                      "p-4 border-b border-slate-800/50 hover:bg-slate-800 transition-colors cursor-pointer group relative overflow-hidden",
+                                      !n.isRead && "bg-indigo-500/5"
+                                    )}
+                                  >
+                                    {!n.isRead && (
+                                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-500" />
+                                    )}
+                                    <div className="flex justify-between items-start mb-1">
+                                      <p className={cn(
+                                        "text-[9px] font-black uppercase tracking-widest",
+                                        n.type === 'success' ? "text-emerald-400" :
+                                        n.type === 'warning' ? "text-amber-400" :
+                                        n.type === 'error' ? "text-rose-400" : "text-indigo-400"
+                                      )}>
+                                        [{n.title.toUpperCase()}]
+                                      </p>
+                                      <span className="text-[8px] text-slate-500 font-black uppercase tracking-widest group-hover:text-slate-400">
+                                        {new Date(n.createdAt).toLocaleDateString()}
+                                      </span>
+                                    </div>
+                                    <p className="text-xs text-slate-300 font-medium leading-relaxed">
+                                      {n.message}
+                                    </p>
+                                  </div>
+                                ))
+                              )}
+                              <div className="p-3 text-center bg-slate-900 sticky bottom-0 border-t border-slate-800">
+                                <button 
+                                  onClick={async () => {
+                                    if (currentUserId) {
+                                      await supabaseService.markAllNotificationsAsRead(currentUserId);
+                                      loadNotifications();
+                                    }
+                                  }}
+                                  className="text-[10px] font-black uppercase tracking-widest text-cyan-400 hover:text-cyan-300 transition-colors py-2"
+                                >
+                                  Marcar todas como leídas
+                                </button>
+                              </div>
+                            </div>
                         </motion.div>
                         </>
                       )}
@@ -3032,18 +3022,25 @@ export default function App() {
                                               <div className="flex items-center gap-3">
                                                 <button 
                                                   onClick={() => {
-                                                    const rawStudent = allStudents.find(u => u.username === student.name);
-                                                    if (!rawStudent) return;
-                                                    const updatedStudent = { ...rawStudent };
-                                                    updatedStudent.pendingTasks = updatedStudent.pendingTasks?.filter(id => id !== taskId);
-                                                    updatedStudent.completedTasks = [...(updatedStudent.completedTasks || []), taskId];
-                                                    if (taskDetails.reward.tokens) updatedStudent.tokens += taskDetails.reward.tokens;
-                                                    if (taskDetails.reward.cardId && !updatedStudent.collection.includes(taskDetails.reward.cardId)) {
-                                                      updatedStudent.collection.push(taskDetails.reward.cardId);
+                                                    const targetUserStats = rawStudents.find(u => u.id === student.id);
+                                                    if (!targetUserStats) return;
+                                                    const updatedStats = { ...targetUserStats };
+                                                    updatedStats.pendingTasks = updatedStats.pendingTasks?.filter(id => id !== taskId);
+                                                    updatedStats.completedTasks = [...(updatedStats.completedTasks || []), taskId];
+                                                    if (taskDetails.reward.tokens) updatedStats.tokens += taskDetails.reward.tokens;
+                                                    if (taskDetails.reward.cardId && !updatedStats.collection.includes(taskDetails.reward.cardId)) {
+                                                      updatedStats.collection.push(taskDetails.reward.cardId);
                                                     }
                                                     // Sync to Supabase
-                                                    if (rawStudent.id) {
-                                                      supabaseService.updateUserStats(rawStudent.id, updatedStudent).then(() => {
+                                                    if (targetUserStats.id) {
+                                                      supabaseService.updateUserStats(targetUserStats.id, updatedStats).then(async () => {
+                                                        // Send notification to student
+                                                        await supabaseService.sendNotification(
+                                                          targetUserStats.id!,
+                                                          'Tarea Aprobada',
+                                                          `Tu tarea "${taskDetails.title}" ha sido aprobada. ¡Recibiste tus recompensas!`,
+                                                          'success'
+                                                        );
                                                         loadUsers();
                                                         toast.success('Entrada aprobada, recompensas enviadas al alumno.');
                                                       }).catch(console.error);
@@ -3054,13 +3051,20 @@ export default function App() {
                                                 </button>
                                                 <button 
                                                   onClick={() => {
-                                                    const rawStudent = allStudents.find(u => u.username === student.name);
-                                                    if (!rawStudent) return;
-                                                    const updatedStudent = { ...rawStudent };
-                                                    updatedStudent.pendingTasks = updatedStudent.pendingTasks?.filter(id => id !== taskId);
+                                                    const targetUserStats = rawStudents.find(u => u.id === student.id);
+                                                    if (!targetUserStats) return;
+                                                    const updatedStats = { ...targetUserStats };
+                                                    updatedStats.pendingTasks = updatedStats.pendingTasks?.filter(id => id !== taskId);
                                                     
-                                                    if (rawStudent.id) {
-                                                      supabaseService.updateUserStats(rawStudent.id, updatedStudent).then(() => {
+                                                    if (targetUserStats.id) {
+                                                      supabaseService.updateUserStats(targetUserStats.id, updatedStats).then(async () => {
+                                                        // Send notification to student
+                                                        await supabaseService.sendNotification(
+                                                          targetUserStats.id!,
+                                                          'Tarea Rechazada',
+                                                          `Tu tarea "${taskDetails.title}" no fue aprobada. Por favor, revisa tus respuestas e inténtalo de nuevo.`,
+                                                          'error'
+                                                        );
                                                         loadUsers();
                                                         toast.error('Entrada rechazada, el alumno deberá intentarlo de nuevo.');
                                                       }).catch(console.error);
@@ -3158,7 +3162,7 @@ export default function App() {
                                   Estudiantes Destacados
                                 </h4>
                                 <div className="space-y-2">
-                                  {globalStudents
+                                  {allStudents
                                     .filter(s => s.grade === stats.grade)
                                     .sort((a, b) => b.tokens - a.tokens)
                                     .slice(0, 10)

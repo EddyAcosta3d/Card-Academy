@@ -43,8 +43,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, masterTeacherKey,
 
   const handleAuth = async (action: 'signin' | 'signup') => {
     // Basic normalization as requested
-    const normUser = username.trim().toUpperCase();
-    const normPass = password.toUpperCase();
+    const normUser = username.trim();
+    const rawPass = password;
     const normKey = teacherVerifyKey.trim().toUpperCase();
     const normMasterKey = (masterTeacherKey || "").trim().toUpperCase();
 
@@ -61,7 +61,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, masterTeacherKey,
       return;
     }
 
-    if (!normUser || !normPass) {
+    if (!normUser || !rawPass) {
       setErrorMsg('Por favor ingresa usuario y contraseña');
       return;
     }
@@ -109,7 +109,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, masterTeacherKey,
 
         const { stats } = await supabaseService.signUp(
           normUser, 
-          normPass, 
+          rawPass, 
           role, 
           role === 'Student' ? selectedGrade : undefined,
           role === 'Teacher' ? {
@@ -117,22 +117,22 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, masterTeacherKey,
             assignedGroups: Array.from(assignedGroups) as Grade[]
           } : undefined
         );
-        onLogin(role, normUser, role === 'Student' ? selectedGrade : undefined, stats);
+        onLogin(role, stats.username, role === 'Student' ? selectedGrade : undefined, stats);
       } else {
         try {
-          // Attempt login with normalized (UPPERCASE) password first
-          const { stats } = await supabaseService.signIn(normUser, normPass);
-          onLogin(stats.role, normUser, stats.grade, stats);
+          // Attempt login with raw password
+          const { stats } = await supabaseService.signIn(normUser, rawPass);
+          onLogin(stats.role, stats.username, stats.grade, stats);
         } catch (error: any) {
-          // If failed and the password wasn't already in the requested case (e.g. legacy mixed/lower case)
-          // try with the raw password as a fallback
-          if (password !== normPass) {
+          // Fallback: try uppercase password if raw failed (to support users created with the previous bug)
+          const upperPass = rawPass.toUpperCase();
+          if (upperPass !== rawPass) {
             try {
-              const { stats: legacyStats } = await supabaseService.signIn(normUser, password);
-              onLogin(legacyStats.role, normUser, legacyStats.grade, legacyStats);
+              const { stats: upperStats } = await supabaseService.signIn(normUser, upperPass);
+              onLogin(upperStats.role, upperStats.username, upperStats.grade, upperStats);
               return;
             } catch (fallbackError) {
-              // If both fail, throw the first error (usually "Invalid credentials")
+              // Ignore fallback error
             }
           }
           throw error;
@@ -151,13 +151,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, masterTeacherKey,
   };
 
   const handleTeacherNext = () => {
-    const normUser = username.trim().toUpperCase();
-    const normPass = password.toUpperCase();
+    const normUser = username.trim();
+    const rawPass = password;
     const normKey = teacherVerifyKey.trim().toUpperCase();
     const normMasterKey = (masterTeacherKey || "").trim().toUpperCase();
 
     if (teacherSignupStep === 1) {
-      if (!normUser || !normPass || !normKey) {
+      if (!normUser || !rawPass || !normKey) {
         setErrorMsg('Completa todos los campos');
         return;
       }
@@ -354,8 +354,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, masterTeacherKey,
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleAuth(isSignupMode ? 'signup' : 'signin')}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 lg:py-5 pl-14 pr-14 text-sm font-black uppercase tracking-[0.2em] text-white focus:outline-none focus:border-indigo-500 transition-all placeholder:text-slate-700"
-                      style={{ textTransform: 'uppercase' }}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 lg:py-5 pl-14 pr-14 text-sm font-black tracking-[0.2em] text-white focus:outline-none focus:border-indigo-500 transition-all placeholder:text-slate-700 uppercase"
                     />
                     <button
                       type="button"

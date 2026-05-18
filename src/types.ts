@@ -84,6 +84,16 @@ export interface UserStats {
   lastActive?: string;
 }
 
+export interface AppNotification {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  isRead: boolean;
+  createdAt: string;
+}
+
 export interface Challenge {
   id: string;
   question: string;
