@@ -447,10 +447,10 @@ export default function App() {
     null,
   );
   const [collectionSubTab, setCollectionSubTab] = useState<
-    "Collectible" | "Achievement" | "Reward"
+    "Collectible" | "Achievement"
   >("Collectible");
   const [rankingSubTab, setRankingSubTab] = useState<
-    "Collectible" | "Achievement" | "Reward"
+    "Collectible" | "Achievement"
   >("Collectible");
   const [showPackOpener, setShowPackOpener] = useState(false);
   const [exchangePackId, setExchangePackId] = useState<string | null>(null);
@@ -3240,10 +3240,6 @@ export default function App() {
                                             label: "Logros",
                                             value: "Achievement",
                                           },
-                                          {
-                                            label: "Canjeables",
-                                            value: "Reward",
-                                          },
                                         ].map((tab) => (
                                           <button
                                             key={tab.value}
@@ -3342,7 +3338,7 @@ export default function App() {
                       /* ADMIN COLLECTION MANAGEMENT */
                       <div className="space-y-8">
                         <div className="flex flex-col md:flex-row items-start md:items-end justify-between gap-4 md:gap-6 text-left">
-                          <div className="min-w-0 max-w-full w-full">
+                          <div className="min-w-0 flex-1">
                             <h2 className="text-3xl sm:text-4xl md:text-5xl font-black italic uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-indigo-600 pb-2 px-1 shrink-0">
                               Registro de Cartas
                             </h2>
@@ -3350,11 +3346,10 @@ export default function App() {
                               Configuración Maestro de la Colección
                             </p>
                           </div>
-                          <div className="flex bg-slate-900 p-1.5 rounded-2xl border border-slate-800 gap-1 overflow-x-auto transform-gpu no-scrollbar max-w-full w-full justify-center md:justify-end md:w-auto">
+                          <div className="flex bg-slate-900 p-1.5 rounded-2xl border border-slate-800 gap-1 overflow-x-auto transform-gpu max-w-full w-full min-h-[44px] items-center justify-start md:w-auto">
                             {[
-                              { label: "Canjeables", value: "Reward" },
-                              { label: "Logros", value: "Achievement" },
                               { label: "Colección", value: "Collectible" },
+                              { label: "Logros", value: "Achievement" },
                             ].map((sub) => (
                               <button
                                 key={sub.value}

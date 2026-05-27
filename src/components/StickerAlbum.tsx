@@ -27,7 +27,7 @@ export const StickerAlbum: React.FC<StickerAlbumProps> = ({
   const [activePackId, setActivePackId] = useState<string>(packs[0]?.id || "");
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<"Collectible" | "Achievement" | "Reward">("Collectible");
+  const [activeTab, setActiveTab] = useState<"Collectible" | "Achievement">("Collectible");
   const [sortByRarity, setSortByRarity] = useState<boolean>(false);
 
   const [currentlyDroppingCardId, setCurrentlyDroppingCardId] = useState<string | null>(null);
@@ -40,7 +40,7 @@ export const StickerAlbum: React.FC<StickerAlbumProps> = ({
         // Find if we need to change active pack based on first card
         const firstCard = cards.find((c) => animatingCards[0] === c.id);
         let currentPackId = firstCard?.sourcePackId;
-        let currentTab: "Collectible" | "Achievement" | "Reward" = firstCard?.category || "Collectible";
+        let currentTab: "Collectible" | "Achievement" = (firstCard?.category === "Achievement" ? "Achievement" : "Collectible");
         
         if (currentPackId) {
           setActivePackId(currentPackId);
@@ -58,10 +58,12 @@ export const StickerAlbum: React.FC<StickerAlbumProps> = ({
           if (card) {
             let changed = false;
             
-            if (card.category && card.category !== currentTab) {
-              currentTab = card.category;
-              setActiveTab(currentTab);
-              changed = true;
+            if (card.category && card.category !== (currentTab as string)) {
+              if (card.category === "Collectible" || card.category === "Achievement") {
+                currentTab = card.category;
+                setActiveTab(currentTab);
+                changed = true;
+              }
             }
 
             if (card.sourcePackId && card.sourcePackId !== currentPackId) {
@@ -108,12 +110,10 @@ export const StickerAlbum: React.FC<StickerAlbumProps> = ({
 
   const packCards = cards.filter((c) => c.sourcePackId === activePackId && c.category === "Collectible");
   const achievements = cards.filter((c) => c.category === "Achievement");
-  const rewards = cards.filter((c) => c.category === "Reward");
 
   const getCardsToDisplay = () => {
     let list = packCards;
     if (activeTab === "Achievement") list = achievements;
-    else if (activeTab === "Reward") list = rewards;
 
     if (sortByRarity) {
       const rarityRank: Record<string, number> = {
@@ -164,17 +164,16 @@ export const StickerAlbum: React.FC<StickerAlbumProps> = ({
     <div className="space-y-4 md:space-y-6 pb-32 max-w-7xl mx-auto px-4 md:px-8">
       <div className="flex flex-col md:flex-row items-center gap-4 justify-between">
         {/* Tab Selection */}
-        <div className="flex w-full md:w-auto overflow-x-auto no-scrollbar bg-slate-900 border border-slate-800 rounded-[1.25rem] p-1 gap-1 shadow-xl block-shrink-0">
+        <div className="flex w-full md:w-auto shrink-0 overflow-x-auto bg-slate-900 border border-slate-800 rounded-[1.25rem] p-1 gap-1 shadow-xl">
           {[
             { label: "Colección", value: "Collectible", color: "text-indigo-400 bg-indigo-500/15" },
             { label: "Logros", value: "Achievement", color: "text-emerald-400 bg-emerald-500/15" },
-            { label: "Canjeables", value: "Reward", color: "text-amber-400 bg-amber-500/15" },
           ].map((tab) => (
             <button
               key={tab.value}
               onClick={() => setActiveTab(tab.value as any)}
               className={cn(
-                "px-4 py-2.5 rounded-xl font-black uppercase tracking-widest text-[9px] sm:text-[10px] transition-all flex-1 md:flex-none whitespace-nowrap",
+                "px-3 sm:px-4 py-2.5 rounded-xl font-black uppercase tracking-widest text-[9px] sm:text-[10px] transition-all flex-1 md:flex-none whitespace-nowrap",
                 activeTab === tab.value
                   ? tab.color + " shadow-sm"
                   : "text-slate-500 hover:text-slate-300 hover:bg-slate-800/80"
@@ -187,7 +186,7 @@ export const StickerAlbum: React.FC<StickerAlbumProps> = ({
 
         {/* Pages selector for Collection */}
         {activeTab === "Collectible" && (
-          <div className="w-full md:w-auto flex-1 bg-slate-900 rounded-[2rem] border border-slate-800 p-2 shadow-xl overflow-x-auto no-scrollbar">
+          <div className="w-full md:w-auto flex-1 min-h-[44px] bg-slate-900 rounded-[2rem] border border-slate-800 p-2 shadow-xl overflow-x-auto">
             <div className="flex gap-2">
               {packs.map((pack) => {
                 // Determine colors based on pack ID
