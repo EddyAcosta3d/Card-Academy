@@ -74,6 +74,38 @@ alter table users add column if not exists last_active timestamp with time zone 
 
 ---
 
+## OPCIÓN C: Tabla de Notificaciones (Faltante)
+Si ves advertencias de que no existe la tabla `notifications` en Supabase, ejecuta este script en tu **SQL Editor**:
+
+```sql
+create table notifications (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references users(id) on delete cascade not null,
+  title text not null,
+  message text not null,
+  type text default 'info' check (type in ('info', 'success', 'warning', 'error')),
+  is_read boolean default false not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- Políticas de Seguridad (RLS) para Notificaciones
+alter table notifications enable row level security;
+
+-- Cualquier usuario puede ver sus propias notificaciones
+create policy "Usuarios ven sus notificaciones" on notifications
+  for select using (auth.uid() = user_id);
+
+-- Enviar notificaciones (Abierto para que profes/admins o el sistema envíe)
+create policy "Cualquiera puede crear notificaciones" on notifications
+  for insert with check (true);
+
+-- Marcar como leída
+create policy "Usuarios actualizan sus notificaciones" on notifications
+  for update using (auth.uid() = user_id);
+```
+
+---
+
 ### Notas importantes:
 1. **assigned_groups**: Es vital que esta columna sea de tipo `text[]` (array de texto).
 2. **username**: Si ya tienes datos, asegúrate de que cada usuario tenga un valor en `username` antes de intentar habitilitarlo como `unique`.

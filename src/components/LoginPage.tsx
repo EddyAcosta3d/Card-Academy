@@ -34,6 +34,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, masterTeacherKey,
   const [teacherSelectedGroups, setTeacherSelectedGroups] = useState<Grade[]>([]);
   const [teacherAssignments, setTeacherAssignments] = useState<Record<string, Grade[]>>({});
   
+  // Forgot password flow states
+  const [isForgotPasswordMode, setIsForgotPasswordMode] = useState(false);
+  const [forgotUsername, setForgotUsername] = useState('');
+  const [forgotNewPassword, setForgotNewPassword] = useState('');
+  const [forgotMasterKey, setForgotMasterKey] = useState('');
+  const [showForgotNewPassword, setShowForgotNewPassword] = useState(false);
+  
   // Flatten all subjects for easy selection with year context
   const allSubjects = [
     ...(ACADEMIC_CONTENT['1'] || []).map(s => ({ ...s, year: '1' as Year })),
@@ -145,6 +152,43 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, masterTeacherKey,
         msg = '⚠️ Email no confirmado. Debes desactivar "Confirm Email" en la configuración de Auth en Supabase.';
       }
       setErrorMsg(msg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    const normUser = forgotUsername.trim();
+    const rawPass = forgotNewPassword;
+    const normKey = forgotMasterKey.trim().toUpperCase();
+
+    if (!normUser || !rawPass || !normKey) {
+      setErrorMsg('Por favor completa todos los campos');
+      return;
+    }
+
+    if (rawPass.length < 6) {
+      setErrorMsg('La nueva contraseña debe tener al menos 6 caracteres');
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+
+    try {
+      await supabaseService.resetPasswordDirectly(normUser, rawPass, normKey);
+      setSuccessMsg('¡Contraseña cambiada con éxito! Ya puedes iniciar sesión.');
+      setIsForgotPasswordMode(false);
+      // Pre-fill user with updated credentials
+      setUsername(normUser);
+      setPassword('');
+      setForgotUsername('');
+      setForgotNewPassword('');
+      setForgotMasterKey('');
+    } catch (err: any) {
+      console.error('Password reset error:', err);
+      setErrorMsg(err.message || 'Error al cambiar la contraseña. Verifica la Llave de Verificación o Usuario.');
     } finally {
       setIsLoading(false);
     }
@@ -275,10 +319,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, masterTeacherKey,
           <div className="relative z-10 space-y-3 lg:space-y-4 flex flex-col h-full overflow-hidden">
             <div className="text-center space-y-2 shrink-0">
               <p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em]">
-                {isSignupMode ? 'Crea tu nueva cuenta' : 'Ingresa a tu cuenta'}
+                {isForgotPasswordMode ? 'Restablecer Contraseña' : isSignupMode ? 'Crea tu nueva cuenta' : 'Ingresa a tu cuenta'}
               </p>
 
-              {isSignupMode && (
+              {!isForgotPasswordMode && isSignupMode && (
                 <div className="flex bg-slate-950 p-1 rounded-2xl border border-slate-800">
                   <button
                     type="button"
@@ -330,17 +374,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, masterTeacherKey,
             )}
 
             <div className="space-y-3 lg:space-y-4 overflow-y-auto no-scrollbar px-1 flex-1">
-              {/* Common Fields & Student Registration */}
-              {(!isSignupMode || signupRole === 'Student' || (signupRole === 'Teacher' && teacherSignupStep === 1)) && (
+              {isForgotPasswordMode ? (
                 <div className="space-y-3 lg:space-y-4">
+                  <p className="text-[11px] text-slate-400 leading-relaxed text-center font-semibold bg-slate-950/40 p-3 rounded-xl border border-slate-800/40">
+                    Escribe tu usuario, tu nueva contraseña y la <span className="text-indigo-400 font-black">Llave de Verificación</span> global del sistema para actualizarla de forma directa.
+                  </p>
+                  
                   <div className="relative">
                     <User className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
                     <input 
                       type="text" 
-                      placeholder={signupRole === 'Teacher' && isSignupMode ? "NOMBRE COMPLETO" : "USUARIO"}
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleAuth(isSignupMode ? 'signup' : 'signin')}
+                      placeholder="USUARIO"
+                      value={forgotUsername}
+                      onChange={(e) => setForgotUsername(e.target.value)}
                       className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 lg:py-5 pl-14 pr-6 text-sm font-black uppercase tracking-[0.2em] text-white focus:outline-none focus:border-indigo-500 transition-all placeholder:text-slate-700"
                       style={{ textTransform: 'uppercase' }}
                     />
@@ -349,21 +395,68 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, masterTeacherKey,
                   <div className="relative">
                     <Lock className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
                     <input 
-                      type={showPassword ? "text" : "password"} 
-                      placeholder="CONTRASEÑA"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleAuth(isSignupMode ? 'signup' : 'signin')}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 lg:py-5 pl-14 pr-14 text-sm font-black tracking-[0.2em] text-white focus:outline-none focus:border-indigo-500 transition-all placeholder:text-slate-700 uppercase"
+                      type={showForgotNewPassword ? "text" : "password"} 
+                      placeholder="NUEVA CONTRASEÑA"
+                      value={forgotNewPassword}
+                      onChange={(e) => setForgotNewPassword(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 lg:py-5 pl-14 pr-14 text-sm font-black tracking-[0.2em] text-white focus:outline-none focus:border-indigo-500 transition-all placeholder:text-slate-700"
                     />
                     <button
                       type="button"
-                      onClick={() => setShowPassword(!showPassword)}
+                      onClick={() => setShowForgotNewPassword(!showForgotNewPassword)}
                       className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors p-1"
                     >
-                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      {showForgotNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
                   </div>
+
+                  <div className="relative pt-1">
+                    <ShieldCheck className="absolute left-6 top-1/2 -translate-y-1/2 text-indigo-400" size={16} />
+                    <input 
+                      type="password" 
+                      placeholder="LLAVE DE VERIFICACIÓN"
+                      value={forgotMasterKey}
+                      onChange={(e) => setForgotMasterKey(e.target.value)}
+                      className="w-full bg-slate-950 border border-indigo-500/30 rounded-2xl py-4 lg:py-5 pl-14 pr-6 text-sm font-black uppercase tracking-[0.2em] text-white focus:outline-none focus:border-indigo-500 transition-all placeholder:text-slate-700 shadow-lg shadow-indigo-500/5 font-mono"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Common Fields & Student Registration */}
+                  {(!isSignupMode || signupRole === 'Student' || (signupRole === 'Teacher' && teacherSignupStep === 1)) && (
+                    <div className="space-y-3 lg:space-y-4">
+                      <div className="relative">
+                        <User className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+                        <input 
+                          type="text" 
+                          placeholder={signupRole === 'Teacher' && isSignupMode ? "NOMBRE COMPLETO" : "USUARIO"}
+                          value={username}
+                          onChange={(e) => setUsername(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && handleAuth(isSignupMode ? 'signup' : 'signin')}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 lg:py-5 pl-14 pr-6 text-sm font-black uppercase tracking-[0.2em] text-white focus:outline-none focus:border-indigo-500 transition-all placeholder:text-slate-700"
+                          style={{ textTransform: 'uppercase' }}
+                        />
+                      </div>
+
+                      <div className="relative">
+                        <Lock className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+                        <input 
+                          type={showPassword ? "text" : "password"} 
+                          placeholder="CONTRASEÑA"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && handleAuth(isSignupMode ? 'signup' : 'signin')}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 lg:py-5 pl-14 pr-14 text-sm font-black tracking-[0.2em] text-white focus:outline-none focus:border-indigo-500 transition-all placeholder:text-slate-700"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors p-1"
+                        >
+                          {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
 
                   {isSignupMode && signupRole === 'Teacher' && (
                     <div className="relative pt-1">
@@ -499,10 +592,49 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, masterTeacherKey,
                   )}
                 </div>
               )}
+              </>
+            )}
             </div>
 
-              <div className="flex flex-col gap-3 pt-2 shrink-0 border-t border-slate-800/50 mt-auto">
-                {isSignupMode ? (
+            <div className="flex flex-col gap-3 pt-2 flex-shrink-0 border-t border-slate-800/50 mt-auto">
+                {isForgotPasswordMode ? (
+                  <>
+                    <button 
+                      type="button"
+                      onClick={handleForgotPassword}
+                      disabled={isLoading}
+                      className={cn(
+                        "w-full py-3 lg:py-4 rounded-[2rem] font-black text-sm lg:text-base uppercase tracking-widest transition-all shadow-2xl flex items-center justify-center gap-3 relative overflow-hidden group",
+                        isLoading ? "bg-slate-800 text-slate-500 border border-slate-700" : "bg-indigo-600 text-white hover:bg-indigo-500 shadow-[0_10px_30px_rgba(79,70,229,0.3)]"
+                      )}
+                    >
+                      {isLoading ? (
+                        <div className="flex items-center gap-3">
+                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          <span className="text-xs">Actualizando...</span>
+                        </div>
+                      ) : (
+                        <>
+                          <span>Cambiar Contraseña</span>
+                          <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                        </>
+                      )}
+                    </button>
+
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        setIsForgotPasswordMode(false);
+                        setErrorMsg('');
+                        setSuccessMsg('');
+                      }}
+                      disabled={isLoading}
+                      className="w-full py-3 lg:py-4 rounded-[2rem] font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-3 bg-transparent text-slate-500 hover:text-slate-300"
+                    >
+                      Volver al Inicio de Sesión
+                    </button>
+                  </>
+                ) : isSignupMode ? (
                   <>
                     <div className="flex gap-3 pt-2">
                       {signupRole === 'Teacher' && teacherSignupStep > 1 && (
@@ -597,13 +729,25 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, masterTeacherKey,
                         </>
                       )}
                     </button>
+
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        setIsForgotPasswordMode(true);
+                        setErrorMsg('');
+                        setSuccessMsg('');
+                      }}
+                      className="text-[10px] text-slate-400 hover:text-indigo-400 transition-colors py-1.5 underline underline-offset-4 mx-auto font-black uppercase tracking-widest"
+                    >
+                      ¿Olvidaste tu contraseña?
+                    </button>
     
                     <div className="relative flex items-center gap-4 py-2">
                       <div className="flex-1 h-[1px] bg-slate-800" />
                       <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">o</span>
                       <div className="flex-1 h-[1px] bg-slate-800" />
                     </div>
-
+ 
                     <button 
                       type="button"
                       onClick={() => {

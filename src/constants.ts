@@ -108,9 +108,9 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         id: 't_ing_1',
         name: 'Basic Grammar',
         tasks: [
-          { id: 'task_ing_1_basic', title: 'AI Quiz: Verb To Be', description: 'Subject pronouns and am/is/are.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
-          { id: 'task_ing_1_inter', title: 'Introductions', description: 'Write a self-introduction (50 words).', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
-          { id: 'task_ing_1_hard', title: 'Short Story', description: 'Write a 100-word daily routine.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_ing_1_basic', title: 'AI Quiz: Verb To Be', description: 'Subject pronouns and am/is/are.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 }, instructions: 'Usa la IA para generar y responder un cuestionario interactivo en inglés sobre los pronombres personales y el uso correcto de am/is/are.' },
+          { id: 'task_ing_1_inter', title: 'Introductions', description: 'Write a self-introduction (50 words).', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 }, instructions: 'Escribe una autopresentación en inglés de al menos 50 palabras en tu libreta. Debes incluir tu nombre, edad, de dónde eres y tus pasatiempos favoritos. Toma una foto clara de tu escrito y súbela como evidencia.' },
+          { id: 'task_ing_1_hard', title: 'Short Story', description: 'Write a 100-word daily routine.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: 'Escribe un breve texto de 100 palabras describiendo tu rutina diaria en inglés (tus actividades desde que te levantas hasta que te duermes) utilizando el presente simple. Toma una foto de tu escrito y súbela aquí.' }
         ]
       }]
     },
@@ -236,9 +236,9 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         id: 't_ing_2',
         name: 'Past Events',
         tasks: [
-          { id: 'task_ing_2_basic', title: 'AI Quiz: Past Simple', description: 'Regular and irregular verbs.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
-          { id: 'task_ing_2_inter', title: 'Biography', description: 'Write a bio of an explorer (80 words).', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
-          { id: 'task_ing_2_hard', title: 'Travel Vlog', description: 'Record a video about your last trip.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_ing_2_basic', title: 'AI Quiz: Past Simple', description: 'Regular and irregular verbs.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 }, instructions: 'Resuelve este examen rápido interactivo de opción múltiple enfocado en diferenciar y usar correctamente los verbos regulares e irregulares en pasado simple en inglés.' },
+          { id: 'task_ing_2_inter', title: 'Biography', description: 'Write a bio of an explorer (80 words).', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 }, instructions: 'Elige a un explorador o personaje histórico famoso y escribe su biografía de al menos 80 palabras en inglés, usando el pasado simple para narrar sus logros y viajes. Sube la foto de tu apunte como evidencia.' },
+          { id: 'task_ing_2_hard', title: 'Travel Vlog', description: 'Record a video about your last trip.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: 'Graba un video corto (máximo 1-2 minutos) explicándonos en inglés qué hiciste en tus últimas vacaciones o en un viaje reciente. Practica tu pronunciación y fluidez. Sube el video o un audio con tu presentación.' }
         ]
       }]
     },
@@ -364,9 +364,9 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         id: 't_ing_3',
         name: 'Future Plans',
         tasks: [
-          { id: 'task_ing_3_basic', title: 'AI Quiz: Future Tenses', description: 'Will vs. Going to.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
-          { id: 'task_ing_3_inter', title: 'Job Interview', description: 'Simulate an interview video.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
-          { id: 'task_ing_3_hard', title: 'Ted Talk', description: 'Present a topic in English (3 min).', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_ing_3_basic', title: 'AI Quiz: Future Tenses', description: 'Will vs. Going to.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 }, instructions: 'Demuestra tus conocimientos respondiendo este cuestionario interactivo sobre el uso de los tiempos futuros en inglés utilizando "will" y "going to".' },
+          { id: 'task_ing_3_inter', title: 'Job Interview', description: 'Simulate an interview video.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 }, instructions: 'Graba un video simulando una entrevista de trabajo en inglés donde respondas a 3 preguntas básicas (sobre ti, tus fortalezas y por qué quieres el trabajo). Si no puedes grabar video, sube el guion escrito detallado en inglés.' },
+          { id: 'task_ing_3_hard', title: 'Ted Talk', description: 'Present a topic in English (3 min).', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: 'Prepara una exposición corta (estilo TED Talk) de 3 minutos en inglés sobre un tema de impacto mundial o escolar (ej. cuidado del agua, tecnología, valores). Sube tu guion escrito en inglés o una foto/video de tu presentación.' }
         ]
       }]
     },

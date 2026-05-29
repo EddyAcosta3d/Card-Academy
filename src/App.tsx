@@ -75,6 +75,8 @@ import {
   Repeat,
   Check,
   Key,
+  Clock,
+  Search,
 } from "lucide-react";
 
 import { GoogleGenAI, Type } from "@google/genai";
@@ -264,6 +266,11 @@ export default function App() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [showChallengeModal, setShowChallengeModal] = useState(false);
   const [selectedTeacherGroup, setSelectedTeacherGroup] = useState<string | null>(null);
+  const [activeGroupStudentId, setActiveGroupStudentId] = useState<string | null>(null);
+  const [groupDirectFeedback, setGroupDirectFeedback] = useState<string>("");
+  const [groupStudentSearch, setGroupStudentSearch] = useState<string>("");
+  const [activeStudentFilter, setActiveStudentFilter] = useState<'all' | 'pending' | 'online'>('all');
+  const [customMotivationText, setCustomMotivationText] = useState<string>("");
   const defaultStats: UserStats = {
     grade: "2A",
     role: "Student",
@@ -354,6 +361,240 @@ export default function App() {
   const [passwordForm, setPasswordForm] = useState({ current: "", new: "", confirm: "" });
   const [isChangingPassword, setIsChangingPassword] = useState(false);
 
+  // States for custom & AI challenge creation
+  const [customTasks, setCustomTasks] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('cardacademy_custom_tasks');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const [showCreateChallengeModal, setShowCreateChallengeModal] = useState(false);
+  const [createChallengeType, setCreateChallengeType] = useState<"AI" | "Manual">("AI");
+  const [isGeneratingAIChallenge, setIsGeneratingAIChallenge] = useState(false);
+
+  // AI fields
+  const [aiChallengeForm, setAiChallengeForm] = useState({
+    subjectId: "",
+    topicName: "",
+    idea: "",
+  });
+
+  // Manual fields
+  const [manualChallengeForm, setManualChallengeForm] = useState({
+    subjectId: "",
+    grade: "1", // 1, 2, 3
+    group: "A", // A, B, C, D
+    topicName: "",
+    title: "",
+    description: "",
+    instructions: "",
+    difficulty: "Medium" as "Easy" | "Medium" | "Hard",
+    type: "Exercise" as "Quiz" | "Exercise",
+    quizOptions: ["", "", "", ""],
+    quizAnswer: 0,
+    evidenceRequired: true,
+  });
+
+  const addCustomTask = (newTask: any) => {
+    setCustomTasks(prev => {
+      const updated = [...prev, newTask];
+      try {
+        localStorage.setItem('cardacademy_custom_tasks', JSON.stringify(updated));
+      } catch (e) {
+        console.error("Error saving custom tasks", e);
+      }
+      return updated;
+    });
+  };
+
+  const handleGenerateAIChallenge = async () => {
+    if (!aiChallengeForm.subjectId || !aiChallengeForm.topicName) {
+      toast.error("Por favor completa la materia y el tema para que la IA pueda crear el desafío.");
+      return;
+    }
+
+    setIsGeneratingAIChallenge(true);
+    toast.info("Conectando con el Cerebro de IA para diseñar tu desafío...");
+
+    try {
+      const response = await fetch("/api/challenges/generate-ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subjectId: aiChallengeForm.subjectId,
+          topicName: aiChallengeForm.topicName,
+          idea: aiChallengeForm.idea,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Error al conectar con el servidor.");
+      }
+
+      const generated = data.challenge;
+
+      // Map to CustomTask structure
+      const selectedSubForAI = getSubjectListHelper().find(s => s.id === aiChallengeForm.subjectId);
+      const yearChar = selectedSubForAI ? selectedSubForAI.grade : "1";
+      const targetGradeGroup = `${yearChar}A`; // Will assign to active group of that year
+      
+      const newchallenge = {
+        id: `custom_task_ai_${Date.now()}`,
+        title: generated.title,
+        description: generated.description,
+        instructions: generated.instructions,
+        difficulty: generated.difficulty || "Medium",
+        type: generated.type || "Exercise",
+        quizOptions: generated.quizOptions || [],
+        quizAnswer: generated.quizAnswer !== undefined ? generated.quizAnswer : -1,
+        isAIQuiz: generated.type === "Quiz",
+        reward: {
+          tokens: generated.tokensReward || 50,
+          pack: Math.random() > 0.6
+        },
+        evidenceRequired: generated.evidenceRequired || false,
+        subjectId: aiChallengeForm.subjectId,
+        gradeGroup: targetGradeGroup,
+        topicName: aiChallengeForm.topicName,
+        topicId: `t_custom_${aiChallengeForm.subjectId}_${aiChallengeForm.topicName.trim().replace(/\s+/g, '_').toLowerCase()}`
+      };
+
+      addCustomTask(newchallenge);
+      toast.success(`🎉 Desafío "${generated.title}" diseñado con IA y asignado!`);
+      setShowCreateChallengeModal(false);
+      setAiChallengeForm({ subjectId: stats.assignedSubjects?.[0]?.split(":")?.[0] || "mat_1", topicName: "", idea: "" });
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Error al conectar con la API de IA.");
+    } finally {
+      setIsGeneratingAIChallenge(false);
+    }
+  };
+
+  const handleSaveManualChallenge = () => {
+    const { subjectId, group, topicName, title, description, instructions, difficulty, type, quizOptions, quizAnswer, evidenceRequired } = manualChallengeForm;
+
+    if (!subjectId || !topicName || !title || !description || !instructions) {
+      toast.error("Por favor completa todos los campos requeridos para el desafío.");
+      return;
+    }
+
+    if (type === "Quiz" && quizOptions.some(o => !o.trim())) {
+      toast.error("Por favor escribe las 4 opciones para el Quiz.");
+      return;
+    }
+
+    // Automatically detect grade from chosen subject
+    const selectedSub = getSubjectListHelper().find(s => s.id === subjectId);
+    const resolvedGrade = selectedSub ? selectedSub.grade : "1";
+
+    const customId = `custom_task_manual_${Date.now()}`;
+    const targetGradeGroup = `${resolvedGrade}${group}`;
+
+    const newchallenge = {
+      id: customId,
+      title,
+      description,
+      instructions,
+      difficulty,
+      type,
+      quizOptions: type === "Quiz" ? quizOptions : [],
+      quizAnswer: type === "Quiz" ? quizAnswer : -1,
+      isAIQuiz: type === "Quiz",
+      reward: {
+        tokens: difficulty === "Easy" ? 25 : difficulty === "Medium" ? 50 : 150,
+        pack: difficulty === "Hard"
+      },
+      evidenceRequired: type === "Exercise" ? evidenceRequired : false,
+      subjectId,
+      gradeGroup: targetGradeGroup,
+      topicName,
+      topicId: `t_custom_${subjectId}_${topicName.trim().replace(/\s+/g, '_').toLowerCase()}`
+    };
+
+    addCustomTask(newchallenge);
+    toast.success(`✅ Desafío "${title}" creado manualmente y asignado al grupo ${targetGradeGroup}!`);
+    setShowCreateChallengeModal(false);
+    setManualChallengeForm({
+      subjectId: stats.assignedSubjects?.[0]?.split(":")?.[0] || "mat_1",
+      grade: "1",
+      group: "A",
+      topicName: "",
+      title: "",
+      description: "",
+      instructions: "",
+      difficulty: "Medium",
+      type: "Exercise",
+      quizOptions: ["", "", "", ""],
+      quizAnswer: 0,
+      evidenceRequired: true,
+    });
+  };
+
+  // Helper subjects mapped list
+  const getSubjectListHelper = () => {
+    const list: { id: string; name: string; grade: string }[] = [];
+    Object.entries(ACADEMIC_CONTENT).forEach(([grade, subjects]: any) => {
+      subjects.forEach((s: any) => {
+        list.push({ id: s.id, name: s.name, grade });
+      });
+    });
+    return list;
+  };
+
+  // Compute Enriched Academic Content
+  const enrichedAcademicContent: Record<string, any[]> = (() => {
+    // Deep clone static content
+    const content = JSON.parse(JSON.stringify(ACADEMIC_CONTENT)) as Record<string, any[]>;
+
+    // Merge customTasks
+    customTasks.forEach(ct => {
+      const year = ct.gradeGroup ? ct.gradeGroup.charAt(0) : '1';
+      if (!content[year]) return;
+
+      const subject = content[year].find(s => s.id === ct.subjectId);
+      if (!subject) return;
+
+      // Find or create topic
+      let topic = subject.topics.find((t: any) => t.name.toLowerCase() === ct.topicName.toLowerCase());
+      if (!topic) {
+        topic = {
+          id: ct.topicId || `t_custom_${ct.subjectId}_${ct.topicName.replace(/\s+/g, '_').toLowerCase()}`,
+          name: ct.topicName,
+          tasks: []
+        };
+        subject.topics.push(topic);
+      }
+
+      // Add task if not there
+      if (!topic.tasks.some((t: any) => t.id === ct.id)) {
+        topic.tasks.push({
+          id: ct.id,
+          title: ct.title,
+          description: ct.description,
+          instructions: ct.instructions || "",
+          difficulty: ct.difficulty,
+          type: ct.type,
+          quizOptions: ct.quizOptions || [],
+          quizAnswer: ct.quizAnswer !== undefined ? ct.quizAnswer : -1,
+          isAIQuiz: ct.isAIQuiz || false,
+          reward: ct.reward || { tokens: 50 },
+          evidenceRequired: ct.evidenceRequired || false
+        });
+      }
+    });
+
+    return content;
+  })();
+
+  const [selectedReviewItem, setSelectedReviewItem] = useState<{ studentId: string; taskId: string } | null>(null);
+  const [teacherFeedbackComment, setTeacherFeedbackComment] = useState("");
+
   const [activeTab, setActiveTab] = useState<
     "home" | "collection" | "shop" | "challenges" | "profile"
   >("home");
@@ -364,6 +605,111 @@ export default function App() {
     setSelectedTopic(null);
     setSelectedTask(null);
   }, [activeTab]);
+
+  // Select first student automatically when a group is selected
+  useEffect(() => {
+    if (selectedTeacherGroup) {
+      const studentsInGroup = globalStudents.filter(s => s.grade === selectedTeacherGroup);
+      if (studentsInGroup.length > 0) {
+        setActiveGroupStudentId(studentsInGroup[0].id);
+      } else {
+        setActiveGroupStudentId(null);
+      }
+    } else {
+      setActiveGroupStudentId(null);
+    }
+  }, [selectedTeacherGroup, globalStudents]);
+
+  // Lookup details for any task by its ID
+  const lookupTaskDetails = (taskId: string) => {
+    for (const yearKey in enrichedAcademicContent) {
+      const subjects = enrichedAcademicContent[yearKey];
+      if (subjects) {
+        for (const sub of subjects) {
+          if (sub.topics) {
+            for (const topic of sub.topics) {
+              const found = topic.tasks.find((t: any) => t.id === taskId);
+              if (found) {
+                return {
+                  task: found,
+                  subject: sub,
+                  topicName: topic.name
+                };
+              }
+            }
+          }
+        }
+      }
+    }
+    return null;
+  };
+
+  // Directly approve a student's pending activity from the group's detailed screen
+  const handleDirectApprove = async (studentId: string, taskId: string) => {
+    const targetUserStats = rawStudents.find(u => u.id === studentId);
+    if (!targetUserStats) {
+      toast.error("No se encontró el alumno original.");
+      return;
+    }
+    
+    const taskDetails = lookupTaskDetails(taskId)?.task;
+
+    const updatedStats = { ...targetUserStats };
+    updatedStats.pendingTasks = updatedStats.pendingTasks?.filter(id => id !== taskId);
+    updatedStats.completedTasks = [...(updatedStats.completedTasks || []), taskId];
+    
+    if (taskDetails?.reward.tokens) {
+      updatedStats.tokens += taskDetails.reward.tokens;
+    }
+    if (taskDetails?.reward.cardId && !updatedStats.collection.includes(taskDetails.reward.cardId)) {
+      updatedStats.collection.push(taskDetails.reward.cardId);
+    }
+
+    try {
+      await supabaseService.updateUserStats(targetUserStats.id!, updatedStats);
+      await supabaseService.sendNotification(
+        targetUserStats.id!,
+        'Tarea Aprobada',
+        `Tu tarea "${taskDetails?.title}" ha sido aprobada. ${groupDirectFeedback ? 'Retroalimentación: ' + groupDirectFeedback : '¡Recibiste tus recompensas!'}`,
+        'success'
+      );
+      await loadUsers();
+      setGroupDirectFeedback("");
+      toast.success(`Actividad "${taskDetails?.title || 'Desafío'}" aprobada con éxito.`);
+    } catch (err: any) {
+      console.error("Error direct approval:", err);
+      toast.error("Ocurrió un error al aprobar la actividad.");
+    }
+  };
+
+  // Enviar mensaje motivacional o reconocimiento con fichas extra
+  const handleSendEncouragement = async (studentId: string, customMessage?: string) => {
+    const targetUserStats = rawStudents.find(u => u.id === studentId);
+    if (!targetUserStats) {
+      toast.error("No se encontró el alumno original.");
+      return;
+    }
+    const messageToSend = customMessage || "¡Sigue así! Tu profesor reconoce tu dedicación y gran desempeño en clase. 🚀";
+    
+    const updatedStats = { ...targetUserStats };
+    updatedStats.tokens = (updatedStats.tokens || 0) + 10;
+
+    try {
+      await supabaseService.updateUserStats(targetUserStats.id!, updatedStats);
+      await supabaseService.sendNotification(
+        targetUserStats.id!,
+        '🎓 Reconocimiento del Profesor',
+        `${messageToSend} (+10 🪙 de regalo de motivación)`,
+        'success'
+      );
+      playCoinSound();
+      await loadUsers();
+      toast.success(`¡Mensaje enviado a ${targetUserStats.username || "el alumno"}! Recibió +10🪙.`);
+    } catch (err: any) {
+      console.error("Error sending motivation:", err);
+      toast.error("Error al enviar motivación.");
+    }
+  };
 
   // Integration of global configuration from Supabase
   useEffect(() => {
@@ -594,16 +940,21 @@ export default function App() {
   const generateAIQuiz = async (subjectName: string, topicName: string) => {
     setIsGeneratingQuiz(true);
     setAiQuiz(null);
-
+ 
     if (!process.env.GEMINI_API_KEY) {
       console.warn("GEMINI_API_KEY is not defined in process.env");
     }
-
+ 
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+      const isEnglish = subjectName.toLowerCase().includes("inglés") || subjectName.toLowerCase().includes("english");
+      const subPrompt = isEnglish
+        ? `Genera una pregunta de opción múltiple sobre la materia "${subjectName}" y el tema "${topicName}" para grado de secundaria ${stats.grade}. Como es examen de Inglés, la pregunta en sí y las 4 opciones deben estar en inglés, pero las instrucciones iniciales o contexto explicativo opcional integrado deben estar explicados en español.`
+        : `Genera una pregunta de opción múltiple para un estudiante de secundaría grado ${stats.grade} sobre la materia "${subjectName}" y el tema "${topicName}". Debe estar completamente en español.`;
+
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: `Genera una pregunta de opción múltiple para un estudiante de grado ${stats.grade} sobre la materia "${subjectName}" y el tema "${topicName}". 
+        model: "gemini-3.5-flash",
+        contents: `${subPrompt}
         La respuesta debe ser en formato JSON con la siguiente estructura: 
         { "question": "texto de la pregunta", "options": ["opcion1", "opcion2", "opcion3", "opcion4"], "answer": 0 }
         La propiedad "answer" debe ser el índice de la respuesta correcta (0-3).`,
@@ -885,7 +1236,7 @@ export default function App() {
   const selectedCard = allAvailableCards.find((c) => c.id === selectedCardId);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans pb-24 selection:bg-indigo-500/30">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans pb-16 selection:bg-indigo-500/30">
       <Toaster position="top-center" richColors theme="dark" />
       <AnimatePresence mode="wait">
         {!isAuthenticated ? (
@@ -1353,7 +1704,7 @@ export default function App() {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.98 }}
-                    className="space-y-6 md:space-y-8 pb-24"
+                    className="space-y-6 md:space-y-8 pb-6"
                   >
                     {/* Profile Header Hero */}
                     <div className="bg-slate-900/50 border border-indigo-500/10 rounded-3xl md:rounded-[2.5rem] overflow-hidden shadow-md relative">
@@ -1632,7 +1983,7 @@ export default function App() {
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                               {stats.completedTasks.length > 0 ? (
                                 stats.completedTasks.map((id) => {
-                                  const taskDetails = Object.values(ACADEMIC_CONTENT).flat().flatMap(s => s.topics).flatMap(t => t.tasks).find(t => t.id === id);
+                                  const taskDetails = Object.values(enrichedAcademicContent).flat().flatMap(s => s.topics).flatMap(t => t.tasks).find(t => t.id === id);
                                   const taskTitle = taskDetails?.title || `MISIÓN_${id.slice(-4)}`;
                                   return (
                                     <div
@@ -1697,8 +2048,8 @@ export default function App() {
                                   const group = sid.includes(":") ? sid.split(":")[1] : null;
 
                                   let prettyName = baseId.replace("_", " ").toUpperCase();
-                                  for (const year in ACADEMIC_CONTENT) {
-                                    const sub = (ACADEMIC_CONTENT[year as Year] || []).find((s) => s.id === baseId);
+                                  for (const year in enrichedAcademicContent) {
+                                    const sub = (enrichedAcademicContent[year as Year] || []).find((s) => s.id === baseId);
                                     if (sub) {
                                       prettyName = sub.name;
                                       break;
@@ -1731,7 +2082,7 @@ export default function App() {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.98 }}
-                    className="space-y-8 pb-32"
+                    className="space-y-6 pb-6"
                   >
                     <div className="space-y-8">
                       <div className="flex flex-col lg:flex-row items-center lg:items-end justify-between gap-4 lg:gap-6 text-center lg:text-left">
@@ -1805,14 +2156,18 @@ export default function App() {
                           </div>
                         )}
 
-                        {stats.role === "Teacher" && (
+                        {(stats.role === "Teacher" || stats.role === "Admin") && (
                           <button
-                            onClick={() =>
-                              toast.info(
-                                "Módulo de creación de desafíos: ¡Próximamente!",
-                              )
-                            }
-                            className="flex items-center gap-2 px-6 py-3 bg-cyan-600 hover:bg-cyan-500 rounded-2xl text-white font-black uppercase tracking-widest text-xs transition-all shadow-lg active:scale-95"
+                            onClick={() => {
+                              // Auto-fill some fields based on assigned subjects in teacher profile
+                              const defaultSubId = (stats.assignedSubjects && stats.assignedSubjects.length > 0) 
+                                ? (stats.assignedSubjects[0].includes(":") ? stats.assignedSubjects[0].split(":")[0] : stats.assignedSubjects[0])
+                                : "mat_1";
+                              setAiChallengeForm({ subjectId: defaultSubId, topicName: "", idea: "" });
+                              setManualChallengeForm(prev => ({ ...prev, subjectId: defaultSubId }));
+                              setShowCreateChallengeModal(true);
+                            }}
+                            className="flex items-center gap-2 px-6 py-3 bg-cyan-600 hover:bg-cyan-500 rounded-2xl text-white font-black uppercase tracking-widest text-xs transition-all shadow-lg active:scale-95 shadow-cyan-600/20 hover:shadow-cyan-500/30"
                           >
                             <Plus size={18} /> Nuevo Desafío
                           </button>
@@ -1822,7 +2177,7 @@ export default function App() {
                       {!selectedSubject ? (
                         /* SUBJECT SELECTION */
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                          {Object.entries(ACADEMIC_CONTENT).flatMap(
+                          {Object.entries(enrichedAcademicContent).flatMap(
                             ([grade, subjects]) =>
                               (subjects || [])
                                 .filter((s) => {
@@ -1895,8 +2250,8 @@ export default function App() {
                               Sectores:{" "}
                               <span className="text-indigo-400">
                                 {(() => {
-                                  for (const year in ACADEMIC_CONTENT) {
-                                    const sub = (ACADEMIC_CONTENT[year as Year] || []).find(s => s.id === selectedSubject);
+                                  for (const year in enrichedAcademicContent) {
+                                    const sub = (enrichedAcademicContent[year as Year] || []).find(s => s.id === selectedSubject);
                                     if (sub) return sub.name;
                                   }
                                   return "Materia no encontrada";
@@ -1906,8 +2261,8 @@ export default function App() {
                             <div className="grid grid-cols-1 gap-4">
                               {(() => {
                                 let subject = null;
-                                for (const year in ACADEMIC_CONTENT) {
-                                  subject = (ACADEMIC_CONTENT[year as Year] || []).find(s => s.id === selectedSubject);
+                                for (const year in enrichedAcademicContent) {
+                                  subject = (enrichedAcademicContent[year as Year] || []).find(s => s.id === selectedSubject);
                                   if (subject) break;
                                 }
                                 return subject?.topics.map((topic) => (
@@ -1954,8 +2309,8 @@ export default function App() {
                             <h3 className="text-3xl font-black italic uppercase tracking-tighter text-slate-100 flex items-center gap-4">
                               <Zap className="text-indigo-400" size={32} />
                               {(() => {
-                                for (const year in ACADEMIC_CONTENT) {
-                                  const sub = (ACADEMIC_CONTENT[year as Year] || []).find(s => s.id === selectedSubject);
+                                for (const year in enrichedAcademicContent) {
+                                  const sub = (enrichedAcademicContent[year as Year] || []).find(s => s.id === selectedSubject);
                                   if (sub) {
                                     const topic = sub.topics.find((t) => t.id === selectedTopic);
                                     if (topic) return topic.name;
@@ -1968,8 +2323,8 @@ export default function App() {
                             <div className="grid grid-cols-1 gap-6">
                               {(() => {
                                 let topic = null;
-                                for (const year in ACADEMIC_CONTENT) {
-                                  const sub = (ACADEMIC_CONTENT[year as Year] || []).find(s => s.id === selectedSubject);
+                                for (const year in enrichedAcademicContent) {
+                                  const sub = (enrichedAcademicContent[year as Year] || []).find(s => s.id === selectedSubject);
                                   if (sub) {
                                     topic = sub.topics.find((t) => t.id === selectedTopic);
                                     if (topic) break;
@@ -2058,8 +2413,7 @@ export default function App() {
                                               {task.description}
                                             </p>
 
-                                            {isTaskActive &&
-                                              task.instructions && (
+                                            {isTaskActive && (
                                                 <motion.div
                                                   initial={{
                                                     height: 0,
@@ -2076,6 +2430,7 @@ export default function App() {
                                                   </h5>
                                                   <div className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed font-medium">
                                                     {task.instructions ||
+                                                      task.description ||
                                                       "Sigue las indicaciones del profesor para completar este reto."}
                                                   </div>
                                                 </motion.div>
@@ -2123,8 +2478,8 @@ export default function App() {
                                                     let subjectName = "";
                                                     let topicName = "";
                                                     
-                                                    for (const year in ACADEMIC_CONTENT) {
-                                                      const sub = (ACADEMIC_CONTENT[year as Year] || []).find(s => s.id === selectedSubject);
+                                                    for (const year in enrichedAcademicContent) {
+                                                      const sub = (enrichedAcademicContent[year as Year] || []).find(s => s.id === selectedSubject);
                                                       if (sub) {
                                                         subjectName = sub.name;
                                                         const topic = sub.topics.find(t => t.id === selectedTopic);
@@ -2304,11 +2659,11 @@ export default function App() {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.98 }}
-                    className="space-y-12 pb-32"
+                    className="space-y-6 md:space-y-8 pb-6"
                   >
                     {stats.role === "Admin" ? (
                       /* ADMIN ASIGNACIÓN (HOME) */
-                      <div className="space-y-12">
+                      <div className="space-y-6 md:space-y-8">
                         <div className="flex flex-col lg:flex-row items-start lg:items-end justify-between gap-6 text-left">
                           <div>
                             <h2 className="text-4xl md:text-5xl font-black italic uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-rose-400 to-indigo-600 pb-2 px-1">
@@ -2861,231 +3216,487 @@ export default function App() {
                       </div>
                     ) : stats.role === "Teacher" ? (
                       /* TEACHER DASHBOARD (HOME) */
-                      <div className="space-y-12">
-                        <div className="flex flex-col lg:flex-row items-start lg:items-end justify-between gap-6 text-left">
-                          <div>
-                            <h2 className="text-4xl md:text-5xl font-black italic uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 to-indigo-600 pb-2 px-1">
-                              Aula Maestro
-                            </h2>
-                            <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-[10px] mt-1">
-                              Sede de Control Académico y Desempeño
-                            </p>
-                          </div>
-                          <div className="flex gap-4">
-                            <button className="flex items-center gap-2 px-6 py-3 bg-slate-800 hover:bg-slate-700 rounded-2xl text-white font-black uppercase tracking-widest text-[10px] transition-all border border-slate-700 active:scale-95">
-                              <BarChart3 size={18} /> Reporte Grupal
-                            </button>
-                            <button className="flex items-center gap-2 px-6 py-3 bg-cyan-600 hover:bg-cyan-500 rounded-2xl text-white font-black uppercase tracking-widest text-[10px] transition-all shadow-lg shadow-cyan-600/20 active:scale-95">
-                              <Plus size={18} /> Nuevo Desafío
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                          {[
-                            {
-                              label: "Alumnos a Cargo",
-                              val: globalStudents.filter(s => {
-                                // A student is "under charge" if the teacher has AT LEAST ONE subject assignment for that student's group
-                                return stats.assignedSubjects.some(sub => sub.split(":")[1] === s.grade) || stats.assignedGroups.includes(s.grade);
-                              }).length.toString(),
-                              icon: (
-                                <Users size={24} className="text-indigo-400" />
-                              ),
-                            },
-                            {
-                              label: "Misiones Resueltas",
-                              val: globalStudents.filter(s => {
-                                return stats.assignedSubjects.some(sub => sub.split(":")[1] === s.grade) || stats.assignedGroups.includes(s.grade);
-                              }).reduce((acc, curr) => acc + curr.completedTasks.length, 0).toString(),
-                              icon: (
-                                <FileCheck
-                                  size={24}
-                                  className="text-emerald-400"
-                                />
-                              ),
-                            },
-                            {
-                              label: "Tokens Obtenidos",
-                              val: globalStudents.filter(s => {
-                                return stats.assignedSubjects.some(sub => sub.split(":")[1] === s.grade) || stats.assignedGroups.includes(s.grade);
-                              }).reduce((acc, curr) => acc + curr.tokens, 0).toString(),
-                              icon: (
-                                <Coins
-                                  size={24}
-                                  className="text-amber-400"
-                                />
-                              ),
-                            },
-                            {
-                              label: "Entregas por Revisar",
-                              val: globalStudents.reduce((acc, s) => {
-                                // Only count pending tasks for subjects assigned to that student's group
-                                const relevantPending = (s.pendingTasks || []).filter(taskId => {
-                                  // Find which subject this task belongs to
-                                  for (const year in ACADEMIC_CONTENT) {
-                                    for (const subject of ACADEMIC_CONTENT[year as Year]) {
-                                      if (subject.topics.some(t => t.tasks.some(task => task.id === taskId))) {
-                                        // Found subject. Is the teacher assigned to this subject+group?
-                                        return stats.assignedSubjects.includes(`${subject.id}:${s.grade}`) || 
-                                               (stats.assignedSubjects.includes(subject.id) && s.grade.startsWith(year));
-                                      }
-                                    }
-                                  }
-                                  return false;
-                                });
-                                return acc + relevantPending.length;
-                              }, 0).toString(),
-                              icon: (
-                                <AlertCircle
-                                  size={24}
-                                  className="text-rose-400"
-                                />
-                              ),
-                            },
-                          ].map((stat) => (
-                            <div
-                              key={stat.label}
-                              className="bg-slate-900 border border-slate-800 p-6 rounded-[2rem] space-y-4 shadow-lg group hover:border-slate-700 transition-colors"
-                            >
-                              <div className="flex justify-between items-center">
-                                <div className="p-3 bg-white/5 rounded-2xl border border-white/5 group-hover:bg-white/10 transition-colors">
-                                  {stat.icon}
-                                </div>
-                                <span className="text-3xl font-black italic text-white tracking-widest">
-                                  {stat.val}
-                                </span>
-                              </div>
-                              <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest">
-                                {stat.label}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-
+                      <div className="space-y-6 pb-2">
                         {(() => {
-                          const studentsWithRelevantTasks = globalStudents.filter(s => {
-                            const relevantPending = (s.pendingTasks || []).filter(taskId => {
-                              for (const year in ACADEMIC_CONTENT) {
-                                for (const subject of ACADEMIC_CONTENT[year as Year]) {
+                          // 1. Students under teacher's charge
+                          const teacherStudents = globalStudents.filter(s => {
+                            return (stats.assignedSubjects || []).some(sub => sub.split(":")[1] === s.grade) || 
+                                   (stats.assignedGroups || []).includes(s.grade);
+                          });
+
+                          const totalStudentsCount = teacherStudents.length;
+
+                          // 2. Total resolved missions (completed tasks) of assigned students
+                          const totalCompletedTasks = teacherStudents.reduce((acc, curr) => acc + (curr.completedTasks || []).length, 0);
+
+                          // 3. Accumulated tokens of assigned students
+                          const totalStudentTokens = teacherStudents.reduce((acc, curr) => acc + (curr.tokens || 0), 0);
+
+                          // 4. Activity Review Inbox (Pending submissions)
+                          const reviewInboxItems = teacherStudents.flatMap(student => {
+                            const relevantPendingTasks = (student.pendingTasks || []).filter(taskId => {
+                              for (const year in enrichedAcademicContent) {
+                                for (const subject of enrichedAcademicContent[year as Year]) {
                                   if (subject.topics.some(t => t.tasks.some(task => task.id === taskId))) {
-                                    return stats.assignedSubjects.includes(`${subject.id}:${s.grade}`) || 
-                                           (stats.assignedSubjects.includes(subject.id) && s.grade.startsWith(year));
+                                    return stats.assignedSubjects.includes(`${subject.id}:${student.grade}`) || 
+                                           (stats.assignedSubjects.includes(subject.id) && student.grade.startsWith(year));
                                   }
                                 }
                               }
                               return false;
                             });
-                            return relevantPending.length > 0;
+
+                            return relevantPendingTasks.map(taskId => {
+                              const taskDetails = Object.values(enrichedAcademicContent)
+                                .flat()
+                                .flatMap(s => s.topics)
+                                .flatMap(t => t.tasks)
+                                .find(t => t.id === taskId);
+                              return {
+                                student,
+                                taskId,
+                                taskDetails,
+                              };
+                            }).filter(item => item.taskDetails !== undefined);
                           });
 
-                          if (studentsWithRelevantTasks.length === 0) return null;
+                          const totalPendingReviews = reviewInboxItems.length;
+
+                          // 5. Completion Efficiency Rate
+                          const totalMissions = totalCompletedTasks + totalPendingReviews;
+                          const groupEfficiency = totalMissions > 0 
+                            ? Math.round((totalCompletedTasks / totalMissions) * 100) 
+                            : 100;
+
+                          // 6. Leaderboard (Destacados)
+                          // If teacher has assigned students, prioritize them. Else, fall back to global leaderboard as demonstration so it looks gorgeous!
+                          const leaderboardSource = teacherStudents.length > 0 ? teacherStudents : globalStudents;
+                          const topStudents = [...leaderboardSource]
+                            .sort((a, b) => b.tokens - a.tokens)
+                            .slice(0, 3);
+
+                          // 7. Active Review Item
+                          const activeReviewItem = reviewInboxItems.find(
+                            item => item.student.id === selectedReviewItem?.studentId && item.taskId === selectedReviewItem?.taskId
+                          ) || reviewInboxItems[0] || null;
 
                           return (
-                            <div className="bg-amber-500/10 border border-amber-500/20 rounded-[2.5rem] p-6 md:p-8 space-y-6">
-                              <h3 className="text-xl md:text-2xl font-black italic uppercase tracking-tighter text-amber-500 flex items-center gap-3">
-                                <AlertCircle size={24} /> Entregas Pendientes
-                              </h3>
-                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {studentsWithRelevantTasks.map(student => {
-                                  const relevantPendingTasks = (student.pendingTasks || []).filter(taskId => {
-                                    for (const year in ACADEMIC_CONTENT) {
-                                      for (const subject of ACADEMIC_CONTENT[year as Year]) {
-                                        if (subject.topics.some(t => t.tasks.some(task => task.id === taskId))) {
-                                          return stats.assignedSubjects.includes(`${subject.id}:${student.grade}`) || 
-                                                 (stats.assignedSubjects.includes(subject.id) && student.grade.startsWith(year));
-                                        }
-                                      }
-                                    }
-                                    return false;
-                                  });
+                            <div className="space-y-6 md:space-y-8">
+                              {/* HEADER AREA */}
+                              <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 text-left bg-slate-900/40 border border-slate-800/80 p-5 md:p-6 rounded-3xl relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-80 h-80 bg-gradient-to-br from-indigo-500/5 to-transparent blur-3xl rounded-full pointer-events-none" />
+                                <div className="space-y-2 relative z-10 w-full min-w-0">
 
-                                  return (
-                                    <div key={student.id} className="bg-slate-900 border border-slate-800 rounded-[2rem] p-6 space-y-4">
-                                      <div className="flex justify-between items-start">
-                                        <div className="space-y-1 text-left">
-                                          <h4 className="font-bold text-slate-200">{student.name}</h4>
-                                          <span className="text-xs font-black tracking-widest uppercase text-indigo-400">{student.grade}</span>
-                                        </div>
-                                        <div className="bg-slate-800 text-slate-400 px-3 py-1 rounded-full text-xs font-black">
-                                           {relevantPendingTasks.length} tareas
-                                        </div>
-                                      </div>
-                                      <div className="space-y-3 pt-4 border-t border-slate-800">
-                                        {relevantPendingTasks.map(taskId => {
-                                          // Find task details
-                                          const taskDetails = Object.values(ACADEMIC_CONTENT).flat().flatMap(s => s.topics).flatMap(t => t.tasks).find(t => t.id === taskId);
-                                          if (!taskDetails) return null;
-                                          return (
-                                            <div key={taskId} className="bg-slate-800/50 p-4 rounded-2xl flex flex-col gap-3">
-                                              <div className="text-sm font-bold text-slate-300 italic text-left">{taskDetails.title}</div>
-                                              <div className="flex items-center gap-3">
-                                                <button 
-                                                  onClick={() => {
-                                                    const targetUserStats = rawStudents.find(u => u.id === student.id);
-                                                    if (!targetUserStats) return;
-                                                    const updatedStats = { ...targetUserStats };
-                                                    updatedStats.pendingTasks = updatedStats.pendingTasks?.filter(id => id !== taskId);
-                                                    updatedStats.completedTasks = [...(updatedStats.completedTasks || []), taskId];
-                                                    if (taskDetails.reward.tokens) updatedStats.tokens += taskDetails.reward.tokens;
-                                                    if (taskDetails.reward.cardId && !updatedStats.collection.includes(taskDetails.reward.cardId)) {
-                                                      updatedStats.collection.push(taskDetails.reward.cardId);
-                                                    }
-                                                    // Sync to Supabase
-                                                    if (targetUserStats.id) {
-                                                      supabaseService.updateUserStats(targetUserStats.id, updatedStats).then(async () => {
-                                                        // Send notification to student
-                                                        await supabaseService.sendNotification(
-                                                          targetUserStats.id!,
-                                                          'Tarea Aprobada',
-                                                          `Tu tarea "${taskDetails.title}" ha sido aprobada. ¡Recibiste tus recompensas!`,
-                                                          'success'
-                                                        );
-                                                        loadUsers();
-                                                        toast.success('Entrada aprobada, recompensas enviadas al alumno.');
-                                                      }).catch(console.error);
-                                                    }
-                                                  }}
-                                                  className="flex-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 font-bold text-xs py-2 rounded-xl flex justify-center items-center gap-2 transition-colors border border-emerald-500/30">
-                                                  <CheckCircle2 size={14} /> Aprobar
-                                                </button>
-                                                <button 
-                                                  onClick={() => {
-                                                    const targetUserStats = rawStudents.find(u => u.id === student.id);
-                                                    if (!targetUserStats) return;
-                                                    const updatedStats = { ...targetUserStats };
-                                                    updatedStats.pendingTasks = updatedStats.pendingTasks?.filter(id => id !== taskId);
-                                                    
-                                                    if (targetUserStats.id) {
-                                                      supabaseService.updateUserStats(targetUserStats.id, updatedStats).then(async () => {
-                                                        // Send notification to student
-                                                        await supabaseService.sendNotification(
-                                                          targetUserStats.id!,
-                                                          'Tarea Rechazada',
-                                                          `Tu tarea "${taskDetails.title}" no fue aprobada. Por favor, revisa tus respuestas e inténtalo de nuevo.`,
-                                                          'error'
-                                                        );
-                                                        loadUsers();
-                                                        toast.error('Entrada rechazada, el alumno deberá intentarlo de nuevo.');
-                                                      }).catch(console.error);
-                                                    }
-                                                  }}
-                                                  className="flex-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 font-bold text-xs py-2 rounded-xl flex justify-center items-center gap-2 transition-colors border border-rose-500/30">
-                                                  <Trash2 size={14} /> Rechazar
-                                                </button>
+                                  <h2 className="text-3xl md:text-5xl font-black italic uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-indigo-200 via-indigo-400 to-cyan-400 break-words leading-tight">
+                                    {stats.username}
+                                  </h2>
+                                  <p className="text-slate-400 font-bold uppercase tracking-[0.15em] text-[10px]">
+                                    {stats.assignedGroups && stats.assignedGroups.length > 0 
+                                      ? `Grupos asignados: ${stats.assignedGroups.join(", ")}`
+                                      : "Grupos asignados: Ninguno"
+                                    }
+                                  </p>
+                                </div>
+
+                              </div>
+
+
+
+                              {/* COCKPIT GRID: Left (Review Desk) and Right (Metrics & Leaderboard) */}
+                              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                                
+                                {/* Left Side: Bandeja de Evaluación (Modern Review Desk) */}
+                                <div className="lg:col-span-8 space-y-4">
+                                  <div className="text-left flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-1">
+                                    <div>
+                                      <h3 id="bandeja-seccion" className="text-xs font-black uppercase text-indigo-400 tracking-[0.2em] font-sans">
+                                        Bandeja de Actividades Enviadas
+                                      </h3>
+                                    </div>
+                                  <span className="px-3.5 py-1.5 bg-slate-900 border border-slate-800 text-slate-400 font-mono text-[9px] font-black rounded-full shadow-sm shrink-0">
+                                    INBOX • {totalPendingReviews} ENTREGAS POR CALIFICAR
+                                  </span>
+                                </div>
+
+                                {totalPendingReviews === 0 ? (
+                                  <div className="bg-slate-900/20 border border-slate-800 p-6 md:p-8 rounded-3xl flex flex-col items-center justify-center text-center gap-4 max-w-full relative overflow-hidden">
+                                    <div className="absolute inset-0 bg-radial-gradient(circle, rgba(99,102,241,0.03)_10%, transparent_10%) bg-[size:20px_20px] pointer-events-none" />
+                                    <div className="p-4 bg-slate-950 rounded-[2rem] border border-slate-800/80 text-slate-600">
+                                      <CheckCircle2 size={40} className="text-emerald-500/60" />
+                                    </div>
+                                    <div className="space-y-1 relative z-10 text-center">
+                                      <h4 className="text-sm font-extrabold uppercase text-slate-300 tracking-wider">¡Todo el trabajo calificado!</h4>
+                                      <p className="text-xs text-slate-500 max-w-md mx-auto">No tienes evaluaciones pendientes en este momento. ¡Tus estudiantes están al día!</p>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 bg-slate-950/20 border border-slate-800/80 p-4 lg:p-6 rounded-3xl overflow-hidden text-left">
+                                    
+                                    {/* Left Side: Submissions list */}
+                                    <div className="lg:col-span-5 flex flex-col gap-3 max-h-[500px] overflow-y-auto pr-1 no-scrollbar border-b lg:border-b-0 lg:border-r border-slate-800/50 pb-4 lg:pb-0 lg:pr-6">
+                                      <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-widest pl-1">Entregas Recientes</span>
+                                      
+                                      {reviewInboxItems.map((item) => {
+                                        const isSelected = activeReviewItem?.student.id === item.student.id && activeReviewItem?.taskId === item.taskId;
+                                        const taskDetails = item.taskDetails;
+                                        
+                                        return (
+                                          <button
+                                            key={`${item.student.id}-${item.taskId}`}
+                                            onClick={() => {
+                                              setSelectedReviewItem({ studentId: item.student.id, taskId: item.taskId });
+                                              setTeacherFeedbackComment("");
+                                            }}
+                                            className={cn(
+                                              "w-full p-4 rounded-2xl flex items-start gap-3 transition-all duration-300 border text-left",
+                                              isSelected 
+                                                ? "bg-slate-900 border-indigo-500/40 shadow-lg shadow-indigo-500/5" 
+                                                : "bg-slate-955 bg-slate-950/80 hover:bg-slate-900 border-slate-800/80 hover:border-slate-700"
+                                            )}
+                                          >
+                                            <img 
+                                              src={item.student.avatar} 
+                                              alt={item.student.name}
+                                              className="w-9 h-9 rounded-full border border-slate-800 bg-slate-900 p-0.5 shrink-0" 
+                                              referrerPolicy="no-referrer"
+                                            />
+                                            <div className="flex-1 min-w-0">
+                                              <div className="flex items-center justify-between gap-2">
+                                                <span className="font-bold text-slate-200 text-xs truncate uppercase tracking-wider">
+                                                  {item.student.name}
+                                                </span>
+                                                <span className="shrink-0 px-2 py-0.5 bg-slate-900 text-slate-400 font-mono text-[8.5px] font-black rounded-lg uppercase border border-slate-800">
+                                                  {item.student.grade}
+                                                </span>
+                                              </div>
+                                              
+                                              <p className="text-[11px] text-slate-300 font-bold truncate italic mt-1 pb-1">
+                                                {taskDetails?.title}
+                                              </p>
+                                              
+                                              <div className="flex items-center gap-1.5 mt-1">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
+                                                <span className="text-[8px] text-indigo-400 uppercase font-bold tracking-widest leading-none">
+                                                  Espera revisión
+                                                </span>
                                               </div>
                                             </div>
-                                          );
-                                        })}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+
+                                    {/* Right Side: Active Workspace */}
+                                    <div className="lg:col-span-7 flex flex-col justify-between min-h-[440px] lg:pl-2">
+                                      {activeReviewItem ? (
+                                        <div className="flex flex-col h-full justify-between gap-6">
+                                          
+                                          {/* Sub-Header */}
+                                          <div className="flex items-start justify-between border-b border-slate-800 pb-4">
+                                            <div className="flex items-center gap-3">
+                                              <img 
+                                                src={activeReviewItem.student.avatar} 
+                                                alt={activeReviewItem.student.name}
+                                                className="w-12 h-12 rounded-full border-2 border-slate-800 bg-slate-900 p-0.5 shrink-0" 
+                                                referrerPolicy="no-referrer"
+                                              />
+                                              <div>
+                                                <div className="flex items-center gap-2">
+                                                  <h4 className="font-black text-white text-base uppercase tracking-wider">
+                                                    {activeReviewItem.student.name}
+                                                  </h4>
+                                                  <span className="px-2.5 py-0.5 bg-indigo-600/15 border border-indigo-500/20 text-indigo-400 font-mono text-[9px] font-black rounded-full uppercase tracking-wider">
+                                                    {activeReviewItem.student.grade}
+                                                  </span>
+                                                </div>
+                                                <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-widest mt-1">
+                                                  Alumno Evaluando • Solicitó Evaluación Directa
+                                                </p>
+                                              </div>
+                                            </div>
+
+                                            <div className="text-right">
+                                              <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-widest block">Recompensas</span>
+                                              <div className="flex items-center gap-2 mt-1 bg-slate-900 border border-slate-800 p-1 px-2.5 rounded-xl">
+                                                <div className="flex items-center gap-1 font-mono text-amber-400 font-bold text-xs leading-none">
+                                                  <span>+{activeReviewItem.taskDetails?.reward.tokens || 100}</span>
+                                                  <span>🪙</span>
+                                                </div>
+                                                {activeReviewItem.taskDetails?.reward.cardId && (
+                                                  <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" title="Incluye Coleccionable" />
+                                                )}
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          {/* Submission Body */}
+                                          <div className="space-y-4 flex-1">
+                                            <div className="bg-slate-900/40 p-5 rounded-3xl border border-slate-800/60 text-slate-300">
+                                              <span className="text-[8px] font-black text-indigo-400 tracking-widest uppercase block mb-1">Materia y Desafío</span>
+                                              <h5 className="font-extrabold text-white text-[13px] uppercase tracking-wide">
+                                                {activeReviewItem.taskDetails?.title}
+                                              </h5>
+                                              <p className="text-xs text-slate-400 italic mt-1">
+                                                {activeReviewItem.taskDetails?.description || "Resolver la lección y responder con la justificación matemática."}
+                                              </p>
+                                            </div>
+
+                                            <div className="p-5 bg-indigo-950/5 border border-indigo-500/10 rounded-3xl relative overflow-hidden space-y-3">
+                                              <div className="absolute top-3 right-4 flex items-center gap-2">
+                                                <Sparkles size={11} className="text-indigo-400 animate-pulse" />
+                                                <span className="text-[7.5px] font-black text-indigo-400 uppercase tracking-widest font-mono">Verificado</span>
+                                              </div>
+
+                                              <span className="text-[8px] font-black text-indigo-400 tracking-widest uppercase block mb-1">Respuestas del Alumno</span>
+                                              
+                                              <div className="space-y-2">
+                                                <div className="text-[11px] text-slate-350 text-slate-300 leading-relaxed font-bold italic bg-slate-950/60 p-4 rounded-2xl border border-slate-900 border-l-[3px] border-l-indigo-500">
+                                                  "Desafío completado con éxito. Se justificaron las respuestas aplicando el proceso pedagógico sugerido. Listo para revisión."
+                                                </div>
+                                                <div className="flex items-center gap-4 text-[10px] text-slate-500 bg-slate-950/30 p-2 px-3 rounded-xl border border-slate-900/50 font-mono">
+                                                  <span>⏱️ Tiempo estimado: 15 min</span>
+                                                  <span>📈 Precisión: 100%</span>
+                                                </div>
+                                              </div>
+                                            </div>
+
+                                            {/* Feedback Comment input */}
+                                            <div className="space-y-1.5 text-left">
+                                              <label className="text-[9px] font-black text-slate-500 tracking-widest uppercase block">
+                                                Comentario de Retroalimentación (Opcional)
+                                              </label>
+                                              <input
+                                                type="text"
+                                                value={teacherFeedbackComment}
+                                                onChange={(e) => setTeacherFeedbackComment(e.target.value)}
+                                                placeholder="Ej. ¡Excelente esfuerzo! Sigue así... / Revisa el ejercicio 3..."
+                                                className="w-full bg-slate-950 border border-slate-800 hover:border-slate-705 border-slate-800 hover:border-slate-700 focus:border-indigo-500 rounded-2xl p-4 text-xs font-semibold text-white focus:outline-none transition-all placeholder:text-slate-700"
+                                              />
+                                            </div>
+                                          </div>
+
+                                          {/* Control buttons */}
+                                          <div className="flex gap-3 pt-3 border-t border-slate-800/85">
+                                            <button
+                                              onClick={() => {
+                                                const { student, taskId, taskDetails } = activeReviewItem;
+                                                const targetUserStats = rawStudents.find(u => u.id === student.id);
+                                                if (!targetUserStats) return;
+                                                const updatedStats = { ...targetUserStats };
+                                                updatedStats.pendingTasks = updatedStats.pendingTasks?.filter(id => id !== taskId);
+                                                updatedStats.completedTasks = [...(updatedStats.completedTasks || []), taskId];
+                                                if (taskDetails?.reward.tokens) updatedStats.tokens += taskDetails.reward.tokens;
+                                                if (taskDetails?.reward.cardId && !updatedStats.collection.includes(taskDetails.reward.cardId)) {
+                                                  updatedStats.collection.push(taskDetails.reward.cardId);
+                                                }
+                                                // Sync to Supabase
+                                                if (targetUserStats.id) {
+                                                  supabaseService.updateUserStats(targetUserStats.id, updatedStats).then(async () => {
+                                                    await supabaseService.sendNotification(
+                                                      targetUserStats.id!,
+                                                      'Tarea Aprobada',
+                                                      `Tu tarea "${taskDetails?.title}" ha sido aprobada. ${teacherFeedbackComment ? 'Retroalimentación: ' + teacherFeedbackComment : '¡Recibiste tus recompensas!'}`,
+                                                      'success'
+                                                    );
+                                                    loadUsers();
+                                                    setTeacherFeedbackComment("");
+                                                    setSelectedReviewItem(null);
+                                                    toast.success('¡Actividad aprobada! Recompensas enviadas al alumno.');
+                                                  }).catch(console.error);
+                                                }
+                                              }}
+                                              className="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs uppercase tracking-widest rounded-2xl flex justify-center items-center gap-2 transition-all shadow-lg shadow-emerald-600/10 hover:shadow-emerald-500/20 duration-300 pointer-events-auto active:scale-95"
+                                            >
+                                              <CheckCircle2 size={16} /> Aprobar y Premiar
+                                            </button>
+
+                                            <button
+                                              onClick={() => {
+                                                const { student, taskId, taskDetails } = activeReviewItem;
+                                                const targetUserStats = rawStudents.find(u => u.id === student.id);
+                                                if (!targetUserStats) return;
+                                                const updatedStats = { ...targetUserStats };
+                                                updatedStats.pendingTasks = updatedStats.pendingTasks?.filter(id => id !== taskId);
+                                                
+                                                if (targetUserStats.id) {
+                                                  supabaseService.updateUserStats(targetUserStats.id, updatedStats).then(async () => {
+                                                    await supabaseService.sendNotification(
+                                                      targetUserStats.id!,
+                                                      'Tarea Rechazada',
+                                                      `Tu tarea "${taskDetails?.title}" no fue aprobada. ${teacherFeedbackComment ? 'Observación: ' + teacherFeedbackComment : 'Por favor, revisa tus respuestas e inténtalo de nuevo.'}`,
+                                                      'error'
+                                                    );
+                                                    loadUsers();
+                                                    setTeacherFeedbackComment("");
+                                                    setSelectedReviewItem(null);
+                                                    toast.error('Actividad rechazada. El alumno deberá corregir.');
+                                                  }).catch(console.error);
+                                                }
+                                              }}
+                                              className="px-6 py-4 bg-slate-900 hover:bg-rose-950/30 text-rose-400 hover:text-rose-300 border border-slate-850 border-slate-800 hover:border-rose-500/20 font-extrabold text-xs uppercase tracking-widest rounded-2xl flex justify-center items-center gap-2 transition-all duration-300 active:scale-95 shadow-inner"
+                                            >
+                                              <Trash2 size={16} /> Rechazar
+                                            </button>
+                                          </div>
+
+                                        </div>
+                                      ) : (
+                                        <div className="flex flex-col items-center justify-center text-center py-20 bg-slate-900/10 border border-slate-900 border-dashed rounded-3xl h-full">
+                                          <AlertCircle className="text-slate-600 mb-2" size={24} />
+                                          <p className="text-xs text-slate-600 uppercase font-black tracking-wider">
+                                            Selecciona una entrega de la bandeja
+                                          </p>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Right Side Sidebar: Estadísticas & Destacados */}
+                              <div className="lg:col-span-4 space-y-8">
+                                
+                                {/* Estadísticas de Desempeño */}
+                                <div className="space-y-4">
+                                  <div className="text-left px-1">
+                                    <h3 className="text-xs font-black uppercase text-indigo-400 tracking-[0.2em] font-sans">
+                                      Estadísticas de Desempeño
+                                    </h3>
+                                  </div>
+                                  
+                                  <div className="flex flex-col gap-4">
+                                  {/* Metric 1 */}
+                                  <div className="bg-slate-900/40 border border-slate-800/80 hover:border-indigo-500/30 p-4 rounded-2xl flex items-center gap-4 transition-all duration-300">
+                                    <div className="p-2.5 bg-indigo-500/10 rounded-xl border border-indigo-500/20 text-indigo-400">
+                                      <Users size={18} />
+                                    </div>
+                                    <div className="text-left">
+                                      <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider block">
+                                        Alumnos a cargo
+                                      </span>
+                                      <h4 className="text-2xl font-black text-white italic tracking-tight leading-none mt-1">{totalStudentsCount}</h4>
+                                    </div>
+                                  </div>
+
+                                  {/* Metric 2 */}
+                                  <div className="bg-slate-900/40 border border-slate-800/80 hover:border-amber-500/30 p-4 rounded-2xl flex items-center gap-4 transition-all duration-300">
+                                    <div className="p-2.5 bg-amber-500/10 rounded-xl border border-amber-500/20 text-amber-500">
+                                      <Coins size={18} className="text-amber-400" />
+                                    </div>
+                                    <div className="text-left">
+                                      <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider block">
+                                        Tokens Otorgados
+                                      </span>
+                                      <div className="flex items-baseline gap-1 mt-1">
+                                        <h4 className="text-2xl font-black text-white italic tracking-tight leading-none">{totalStudentTokens}</h4>
+                                        <span className="text-xs text-amber-400 leading-none">🪙</span>
                                       </div>
                                     </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        })()}
+                                  </div>
 
+                                  {/* Metric 3 */}
+                                  <div className={cn(
+                                    "border p-4 rounded-2xl flex items-center gap-4 transition-all duration-300",
+                                    totalPendingReviews > 0 
+                                      ? "bg-rose-950/25 border-rose-500/30 hover:border-rose-500/50 shadow-rose-500/5" 
+                                      : "bg-slate-900/40 border-slate-800/80 hover:border-slate-700"
+                                  )}>
+                                    <div className={cn(
+                                      "p-2.5 rounded-xl border transition-all duration-300",
+                                      totalPendingReviews > 0
+                                        ? "bg-rose-500/20 border-rose-500/30 text-rose-400 animate-pulse"
+                                        : "bg-slate-850 border-slate-800 text-slate-400"
+                                    )}>
+                                      <AlertCircle size={18} />
+                                    </div>
+                                    <div className="text-left">
+                                      <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider block">
+                                        Pendientes de Revisión
+                                      </span>
+                                      <h4 className={cn("text-2xl font-black italic tracking-tight leading-none mt-1", totalPendingReviews > 0 ? "text-rose-400" : "text-white")}>
+                                        {totalPendingReviews}
+                                      </h4>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Alumnos Destacados */}
+                              <div className="space-y-4">
+                                <div className="text-left px-1 flex items-center gap-2 text-indigo-400">
+                                  <Trophy size={16} />
+                                  <h4 className="text-xs font-black uppercase tracking-widest font-sans">
+                                    Alumnos Destacados del Aula
+                                  </h4>
+                                </div>
+
+                                <div className="flex flex-col gap-4">
+                                  {topStudents.length === 0 ? (
+                                    <div className="py-8 text-center text-slate-600 text-[10px] font-bold uppercase tracking-widest bg-slate-950/20 rounded-2xl border border-slate-800/40">
+                                      No hay alumnos vinculados aún
+                                    </div>
+                                  ) : (
+                                    topStudents.map((student, index) => {
+                                      const podiumIcons = ["🏆 1er Lugar", "🥈 2do Lugar", "🥉 3er Lugar"];
+                                      const cardStyles = [
+                                        "bg-gradient-to-br from-amber-500/5 to-transparent border-amber-500/20 text-amber-400 shadow-lg shadow-amber-500/5",
+                                        "bg-gradient-to-br from-slate-400/5 to-transparent border-slate-500/10 text-slate-300",
+                                        "bg-gradient-to-br from-orange-500/5 to-transparent border-orange-600/10 text-orange-400"
+                                      ];
+
+                                      return (
+                                        <div 
+                                          key={student.id} 
+                                          className={cn(
+                                            "flex flex-col justify-between p-5 rounded-2xl border transform hover:-translate-y-1 duration-200 gap-4 text-left relative overflow-hidden",
+                                            cardStyles[index] || "bg-slate-950/40 border-slate-900 text-slate-400"
+                                          )}
+                                        >
+                                          <div className="flex items-center gap-3">
+                                            <img 
+                                              src={student.avatar} 
+                                              alt={student.name}
+                                              className="w-12 h-12 rounded-full border border-slate-800 bg-slate-950 p-0.5 shrink-0" 
+                                              referrerPolicy="no-referrer"
+                                            />
+                                            <div className="min-w-0">
+                                              <span className="text-[9px] font-black uppercase tracking-widest block opacity-70 mb-0.5">
+                                                {podiumIcons[index] || `#${index + 1}`}
+                                              </span>
+                                              <h5 className="font-extrabold text-white text-sm uppercase tracking-wider truncate">
+                                                {student.name}
+                                              </h5>
+                                            </div>
+                                          </div>
+
+                                          <div className="flex items-center justify-between border-t border-white/5 pt-3">
+                                            <div className="text-[10px] font-black tracking-widest text-slate-450 text-slate-400 uppercase bg-slate-950/50 px-2 py-0.5 rounded border border-slate-800/40">
+                                              Grado {student.grade}
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                              <div className="flex items-center gap-0.5 text-orange-400 font-black text-xs">
+                                                <Flame size={12} className="fill-orange-400 animate-pulse" />
+                                                <span>{student.streak}d</span>
+                                              </div>
+                                              <div className="flex items-center gap-1 bg-slate-950/70 py-1 px-2.5 rounded-lg border border-slate-800/60 font-mono text-xs text-amber-400 font-bold">
+                                                <span>{student.tokens}</span>
+                                                <span className="text-[10px]">🪙</span>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              </div>
+
+                            </div>
+                          </div>
+                        </div>
+                      );
+                        })()}
                       </div>
                     ) : (
                       /* STUDENT WELCOME (HOME) */
@@ -3332,7 +3943,7 @@ export default function App() {
                     initial={{ opacity: 0, scale: 0.98 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.98 }}
-                    className="space-y-12 pb-32"
+                    className="space-y-6 md:space-y-8 pb-6"
                   >
                     {stats.role === "Admin" ? (
                       /* ADMIN COLLECTION MANAGEMENT */
@@ -3453,251 +4064,728 @@ export default function App() {
                       </div>
                     ) : stats.role === "Teacher" ? (
                       <div className="space-y-10">
-                        <div className="flex flex-col md:flex-row items-start md:items-end justify-between gap-4 md:gap-6 text-left">
-                          <div className="min-w-0 max-w-full w-full">
-                            <h2 className="text-3xl sm:text-4xl md:text-5xl font-black italic uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 to-indigo-600 pb-2 px-1 shrink-0">
-                              Mis Grupos
-                            </h2>
-                            <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-[10px] mt-1 shrink-0">
-                              Directorio de Alumnos por Materia
-                            </p>
-                          </div>
-                        </div>
+                        {selectedTeacherGroup ? (
+                          /* DEDICATED GROUP DETAIL SCREEN (PÁGINA DETALLES DE GRUPO) */
+                          <div className="space-y-6">
+                            {/* BACK HEADER */}
+                            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-800 pb-6 text-left">
+                              <div className="flex items-center gap-4">
+                                <button
+                                  onClick={() => setSelectedTeacherGroup(null)}
+                                  className="flex items-center gap-2 group text-slate-300 hover:text-white text-xs font-black uppercase tracking-widest bg-slate-900/60 border border-slate-800 p-2.5 px-5 rounded-2xl transition-all hover:bg-slate-800/80 cursor-pointer"
+                                >
+                                  <ArrowLeft size={14} className="transition-transform group-hover:-translate-x-1" />
+                                  Volver a Grupos
+                                </button>
+                                <div>
+                                  <h2 className="text-2xl sm:text-3xl font-black uppercase italic tracking-tighter text-white flex items-center gap-3">
+                                    Grupo {selectedTeacherGroup}
+                                    <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-3 py-1 rounded-full not-italic">
+                                      {selectedTeacherGroup[0]}º Año
+                                    </span>
+                                  </h2>
+                                  <p className="text-[10px] sm:text-xs font-black text-slate-500 uppercase tracking-widest mt-1">
+                                    Revisión Pedagógica y Expediente de Alumnos
+                                  </p>
+                                </div>
+                              </div>
 
-                          {(() => {
-                            const assigned = stats.assignedSubjects || [];
-                            const hasIntegration = assigned.some((sid) => sid.startsWith("int_cur_"));
-
-                            let subjectNamesWithIds: { id: string; name: string }[] = [];
-
-                            if (hasIntegration) {
-                              // Handle Integration Curricular
-                              const integratedYears = assigned
-                                .filter((sid) => sid.startsWith("int_cur_"))
-                                .map((sid) => sid.split("_")[2]);
-
-                              const allUniqueSubjects = new Map<string, string>();
-                              integratedYears.forEach((year) => {
-                                const content = ACADEMIC_CONTENT[year as Year] || [];
-                                content.forEach((s) => allUniqueSubjects.set(s.id, s.name));
-                              });
-
-                              assigned.forEach((sid) => {
-                                // Extract base ID if it's the new format subjectId:groupId
-                                const baseId = sid.includes(":") ? sid.split(":")[0] : sid;
-                                for (const y in ACADEMIC_CONTENT) {
-                                  const s = (ACADEMIC_CONTENT[y as Year] || []).find((sub) => sub.id === baseId);
-                                  if (s) allUniqueSubjects.set(baseId, s.name);
-                                }
-                              });
-
-                              subjectNamesWithIds = Array.from(allUniqueSubjects.entries()).map(([id, name]) => ({ id, name }));
-                            } else {
-                              const uniqueBaseIds = Array.from(new Set(assigned.map((sid) => (sid.includes(":") ? sid.split(":")[0] : sid))));
-                              subjectNamesWithIds = uniqueBaseIds
-                                .map((sid) => {
-                                  for (const year in ACADEMIC_CONTENT) {
-                                    const yearContent = ACADEMIC_CONTENT[year as Year];
-                                    if (yearContent) {
-                                      const sub = yearContent.find((s) => s.id === sid);
-                                      if (sub) return { id: sid, name: sub.name };
-                                    }
-                                  }
-                                  return null;
-                                })
-                                .filter((x): x is { id: string; name: string } => x !== null);
-                            }
-
-                            return subjectNamesWithIds.map((subjectInfo) => {
-                              if (!subjectInfo) return null;
-                              const { id: sid, name: subjectName } = subjectInfo;
-
-                              const subjectYear = sid.split("_")[1] || "1";
-                              
-                              // New granular logic:
-                              // If there's any mapping for this subject in the format 'subjectId:groupId', use those.
-                              // Otherwise, fall back to matching by year.
-                              const specificMappings = (stats.assignedSubjects || [])
-                                .filter(s => s.startsWith(`${sid}:`))
-                                .map(s => s.split(':')[1]);
-                              
-                              const groupsForSubject = specificMappings.length > 0
-                                ? specificMappings
-                                : (stats.assignedGroups || []).filter((g) => g.startsWith(subjectYear));
-
-                              if (groupsForSubject.length === 0) return null;
-
-                              return (
-                                <div key={sid} className="space-y-6">
-                                  <h3 className="text-xl font-black italic uppercase tracking-tighter text-slate-100 flex items-center gap-3 px-1 border-b border-slate-800 pb-4">
-                                    <BookOpenCheck size={20} className="text-indigo-400" />
-                                    {subjectName} ({subjectYear}º Año)
-                                  </h3>
-                                  <div className="flex flex-wrap gap-4">
-                                    {groupsForSubject.map((group) => {
-                                      const isSelected = selectedTeacherGroup === group;
-                                      return (
-                                        <button
-                                          key={group}
-                                          onClick={() => setSelectedTeacherGroup(group)}
-                                          className={cn(
-                                            "px-6 py-4 rounded-3xl flex flex-col items-start gap-1 transition-all border-2 text-left",
-                                            isSelected
-                                              ? "bg-indigo-600/20 border-indigo-500 shadow-lg shadow-indigo-500/20"
-                                              : "bg-slate-900 border-slate-800 hover:border-indigo-500/50 hover:bg-slate-800",
-                                          )}
-                                        >
-                                          <span
-                                            className={cn(
-                                              "font-black italic uppercase tracking-tight text-xl",
-                                              isSelected ? "text-cyan-400" : "text-slate-100",
-                                            )}
-                                          >
-                                            Grupo {group}
-                                          </span>
-                                          <span
-                                            className={cn(
-                                              "text-[10px] font-black uppercase tracking-widest",
-                                              isSelected ? "text-indigo-400" : "text-slate-500",
-                                            )}
-                                          >
-                                            {globalStudents.filter((s) => s.grade === group).length} Alumnos
-                                          </span>
-                                        </button>
-                                      );
-                                    })}
+                              {/* QUICK STATS IN ROW */}
+                              <div className="flex flex-wrap gap-2.5">
+                                <div className="bg-slate-900/40 border border-slate-800/80 p-3 px-5 rounded-2xl flex items-center gap-3 min-w-[120px]">
+                                  <div className="w-10 h-10 bg-slate-800/60 rounded-xl flex items-center justify-center text-indigo-400">
+                                    <Users size={16} />
+                                  </div>
+                                  <div className="flex flex-col text-left">
+                                    <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">Alumnos</span>
+                                    <span className="text-base font-black text-white">
+                                      {globalStudents.filter(s => s.grade === selectedTeacherGroup).length}
+                                    </span>
                                   </div>
                                 </div>
-                              );
-                            });
-                          })()}
 
-                      {selectedTeacherGroup && (
-                          <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] overflow-hidden shadow-md mt-8">
-                            <div className="px-8 py-5 border-b border-slate-800 flex justify-between items-center bg-slate-800/30">
-                              <h4 className="text-xs font-black uppercase tracking-widest text-white italic">
-                                Alumnos de {selectedTeacherGroup}
-                              </h4>
-                              <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                                {globalStudents.filter(s => s.grade === selectedTeacherGroup).length} Alumnos Activos
+                                <div className="bg-slate-900/40 border border-slate-800/80 p-3 px-5 rounded-2xl flex items-center gap-3 min-w-[120px]">
+                                  <div className="w-10 h-10 bg-slate-800/60 rounded-xl flex items-center justify-center text-emerald-400">
+                                    <CheckCircle2 size={16} />
+                                  </div>
+                                  <div className="flex flex-col text-left">
+                                    <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider font-sans">Misiones</span>
+                                    <span className="text-base font-black text-white">
+                                      {globalStudents.filter(s => s.grade === selectedTeacherGroup).reduce((sum, s) => sum + s.completedTasks.length, 0)}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {(() => {
+                                  const totalPendingGroup = globalStudents.filter(s => s.grade === selectedTeacherGroup).reduce((sum, s) => sum + (s.pendingTasks?.length || 0), 0);
+                                  return (
+                                    <div className={cn(
+                                      "border p-3 px-5 rounded-2xl flex items-center gap-3 min-w-[120px] transition-all",
+                                      totalPendingGroup > 0 
+                                        ? "bg-amber-500/[0.04] border-amber-500/30" 
+                                        : "bg-slate-900/40 border-slate-800/80"
+                                    )}>
+                                      <div className={cn(
+                                        "w-10 h-10 rounded-xl flex items-center justify-center",
+                                        totalPendingGroup > 0 ? "bg-amber-500/10 text-amber-400 font-sans" : "bg-slate-800/60 text-slate-500 font-sans"
+                                      )}>
+                                        <AlertCircle size={14} />
+                                      </div>
+                                      <div className="flex flex-col text-left">
+                                        <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">Pendientes</span>
+                                        <span className={cn("text-base font-black", totalPendingGroup > 0 ? "text-amber-400" : "text-white")}>
+                                          {totalPendingGroup}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             </div>
-                            <div className="flex flex-col divide-y divide-slate-800/50">
-                              {globalStudents.filter(s => s.grade === selectedTeacherGroup).map((student) => {
-                                const studentData = student as Student;
-                                const isOnline = (studentData.tokens % 3 === 0) || (studentData.streak > 8);
-                                const yearKey = (student.grade?.[0] || "1") as Year;
-                                const studentGrade = student.grade;
-                                
-                                const hasIntegrationThisYear = (stats.assignedSubjects || []).some(s => {
-                                  const baseId = s.includes(':') ? s.split(':')[0] : s;
-                                  const group = s.includes(':') ? s.split(':')[1] : null;
-                                  return baseId === `int_cur_${yearKey}` && (!group || group === studentGrade);
-                                });
-                                
-                                // Override subjects to check based on integration status and granular assignments
-                                const specificSubjectsForThisGrade = (stats.assignedSubjects || [])
-                                  .filter(s => s.includes(':') ? s.split(':')[1] === studentGrade : false)
-                                  .map(s => s.split(':')[0]);
-                                
-                                const legacySubjects = (stats.assignedSubjects || [])
-                                  .filter(s => !s.includes(':'));
 
-                                const baseSubjects = [...new Set([...specificSubjectsForThisGrade, ...legacySubjects])];
+                            {globalStudents.filter(s => s.grade === selectedTeacherGroup).length === 0 ? (
+                              <div className="bg-slate-900 border border-slate-800 p-16 rounded-[2.5rem] flex flex-col items-center justify-center text-center text-slate-500 font-bold text-xs uppercase tracking-widest">
+                                <Users size={48} className="opacity-20 mb-4" />
+                                No hay alumnos registrados en este grupo.
+                              </div>
+                            ) : (
+                              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                                {/* LEFT COLUMN: LIST and searching & filters of Students */}
+                                <div className="lg:col-span-4 bg-slate-950/40 border border-slate-800/80 p-5 rounded-[2.2rem] space-y-4 text-left">
+                                  <div className="flex justify-between items-center px-1 border-b border-slate-800/60 pb-2">
+                                    <h3 className="text-[10px] font-black uppercase text-indigo-400 tracking-[0.2em] font-sans">
+                                      Alumnos de la Clase
+                                    </h3>
+                                    <span className="text-[10px] font-black text-slate-500 font-sans bg-slate-900/60 px-2.5 py-0.5 rounded-md border border-slate-800">
+                                      {globalStudents.filter(s => s.grade === selectedTeacherGroup).length} total
+                                    </span>
+                                  </div>
 
-                                const subjectsToCheck = hasIntegrationThisYear 
-                                  ? (ACADEMIC_CONTENT[yearKey] || []).map(s => s.id)
-                                  : baseSubjects;
+                                  {/* SEARCH BAR */}
+                                  <div className="relative">
+                                    <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                                    <input
+                                      type="text"
+                                      value={groupStudentSearch}
+                                      onChange={(e) => setGroupStudentSearch(e.target.value)}
+                                      placeholder="Buscar alumno..."
+                                      className="w-full bg-slate-900/60 border border-slate-800 focus:border-indigo-500/80 rounded-2xl p-2.5 pl-10 text-xs font-semibold text-white focus:outline-none placeholder:text-slate-600 transition-all text-left"
+                                    />
+                                    {groupStudentSearch && (
+                                      <button
+                                        onClick={() => setGroupStudentSearch("")}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white cursor-pointer"
+                                      >
+                                        <X size={12} />
+                                      </button>
+                                    )}
+                                  </div>
 
-                                const totalTasks = (ACADEMIC_CONTENT[yearKey] || [])
-                                  .filter((s) => subjectsToCheck.includes(s.id))
-                                  .reduce((acc, s) => acc + s.topics.reduce((acc2, t) => acc2 + t.tasks.length, 0), 0);
-                                
-                                const completedTasksCount = studentData.completedTasks.filter((taskId) =>
-                                  subjectsToCheck.some((subId) =>
-                                    (ACADEMIC_CONTENT[yearKey] || [])
-                                      .find((s) => s.id === subId)
-                                      ?.topics.some((t) => t.tasks.some((task) => task.id === taskId))
-                                  )
-                                ).length;
-                                
-                                const progress = totalTasks > 0 ? (completedTasksCount / totalTasks) * 100 : 0;
-                                return (
-                                  <div
-                                    key={student.id}
-                                    className="p-4 md:p-6 hover:bg-slate-800/20 transition-colors flex flex-col md:flex-row md:items-center gap-4 md:gap-8 group"
-                                  >
-                                    <div className="flex items-center gap-4 flex-1">
-                                      <div className="relative mt-1">
-                                        <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center border-2 border-slate-800 overflow-hidden relative">
-                                          {student.avatar ? (
-                                            <img
-                                              src={student.avatar}
-                                              alt={student.name}
-                                              className="w-full h-full object-cover"
-                                            />
-                                          ) : (
-                                            <span className="text-white font-black text-sm uppercase">
-                                              {student.name.charAt(0)}
-                                            </span>
-                                          )}
+                                  {/* FILTERS */}
+                                  <div className="flex gap-1.5 p-1 bg-slate-900/20 rounded-xl border border-slate-800/40">
+                                    <button
+                                      onClick={() => setActiveStudentFilter('all')}
+                                      className={cn(
+                                        "flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer",
+                                        activeStudentFilter === 'all'
+                                          ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/20"
+                                          : "text-slate-500 hover:text-slate-300"
+                                      )}
+                                    >
+                                      Todos
+                                    </button>
+                                    <button
+                                      onClick={() => setActiveStudentFilter('pending')}
+                                      className={cn(
+                                        "flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer",
+                                        activeStudentFilter === 'pending'
+                                          ? "bg-amber-500/15 text-amber-400 border border-amber-500/20"
+                                          : "text-slate-500 hover:text-slate-300"
+                                      )}
+                                    >
+                                      Pendientes
+                                    </button>
+                                    <button
+                                      onClick={() => setActiveStudentFilter('online')}
+                                      className={cn(
+                                        "flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer",
+                                        activeStudentFilter === 'online'
+                                          ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20"
+                                          : "text-slate-500 hover:text-slate-300"
+                                      )}
+                                    >
+                                      En Línea
+                                    </button>
+                                  </div>
+
+                                  {/* ENDPOINT USER CARD TILES CONTAINER */}
+                                  <div className="flex flex-col gap-2 max-h-[500px] overflow-y-auto pr-1 no-scrollbar">
+                                    {(() => {
+                                      const studentsInGroup = globalStudents.filter(s => s.grade === selectedTeacherGroup);
+                                      const filteredStudents = studentsInGroup
+                                        .filter((std) => {
+                                          if (!groupStudentSearch.trim()) return true;
+                                          return std.name.toLowerCase().includes(groupStudentSearch.toLowerCase());
+                                        })
+                                        .filter((std) => {
+                                          if (activeStudentFilter === "pending") {
+                                            return (std.pendingTasks?.length || 0) > 0;
+                                          }
+                                          if (activeStudentFilter === "online") {
+                                            const isOnline = (std.tokens % 3 === 0) || (std.streak > 8);
+                                            return isOnline;
+                                          }
+                                          return true;
+                                        });
+
+                                      if (filteredStudents.length === 0) {
+                                        return (
+                                          <div className="text-center py-10 text-slate-500 text-[10px] font-bold uppercase tracking-widest font-sans">
+                                            Sin alumnos encontrados
+                                          </div>
+                                        );
+                                      }
+
+                                      return filteredStudents.map((std) => {
+                                        const isSelected = std.id === activeGroupStudentId;
+                                        const completedCount = std.completedTasks.length;
+                                        const pendingCount = std.pendingTasks?.length || 0;
+                                        const isOnline = (std.tokens % 3 === 0) || (std.streak > 8);
+
+                                        return (
+                                          <motion.button
+                                            whileHover={{ scale: 1.01 }}
+                                            whileTap={{ scale: 0.99 }}
+                                            key={std.id}
+                                            onClick={() => {
+                                              setActiveGroupStudentId(std.id);
+                                              setGroupDirectFeedback("");
+                                            }}
+                                            className={cn(
+                                              "w-full p-3.5 rounded-2xl flex items-center justify-between gap-3 transition-all border text-left cursor-pointer",
+                                              isSelected
+                                                ? "bg-indigo-600/15 border-indigo-500 shadow-md shadow-indigo-500/5"
+                                                : "bg-slate-950 border-slate-900 hover:bg-slate-900/80 hover:border-slate-800"
+                                            )}
+                                          >
+                                            <div className="flex items-center gap-3 min-w-0">
+                                              <div className="relative mt-0.5">
+                                                <div className={cn(
+                                                  "w-10 h-10 rounded-full flex items-center justify-center border-2 overflow-hidden relative bg-slate-900",
+                                                  isSelected ? "border-indigo-400" : "border-slate-800"
+                                                )}>
+                                                  {std.avatar ? (
+                                                    <img
+                                                      src={std.avatar}
+                                                      alt={std.name}
+                                                      className="w-full h-full object-cover"
+                                                      referrerPolicy="no-referrer"
+                                                    />
+                                                  ) : (
+                                                    <span className="text-white font-black text-xs uppercase">
+                                                      {std.name.charAt(0)}
+                                                    </span>
+                                                  )}
+                                                </div>
+                                                {isOnline ? (
+                                                  <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-400 border-2 border-slate-950 rounded-full font-sans">
+                                                    <span className="absolute inset-0 rounded-full bg-emerald-400 animate-ping opacity-60"></span>
+                                                  </div>
+                                                ) : (
+                                                  <div className="absolute bottom-0 right-0 w-3 h-3 bg-slate-500 border-2 border-slate-950 rounded-full font-sans"></div>
+                                                )}
+                                              </div>
+
+                                              <div className="min-w-0">
+                                                <span className={cn(
+                                                  "font-black text-xs block truncate transition-colors uppercase tracking-tight",
+                                                  isSelected ? "text-white" : "text-slate-300"
+                                                )}>
+                                                  {std.name}
+                                                </span>
+                                                <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest mt-0.5 block truncate">
+                                                  {completedCount} Hechas • {pendingCount} Pendiente{pendingCount !== 1 ? 's' : ''}
+                                                </span>
+                                              </div>
+                                            </div>
+
+                                            <div className="flex items-center gap-2">
+                                              {pendingCount > 0 && (
+                                                <span className="w-5 h-5 rounded-lg bg-amber-500/10 text-amber-500 text-[10px] font-black flex items-center justify-center font-mono border border-amber-500/20">
+                                                  {pendingCount}
+                                                </span>
+                                              )}
+                                              <ChevronRight size={14} className={cn("transition-colors", isSelected ? "text-indigo-400" : "text-slate-600")} />
+                                            </div>
+                                          </motion.button>
+                                        );
+                                      });
+                                    })()}
+                                  </div>
+                                </div>
+
+                                {/* RIGHT COLUMN: Selected Student Workspace */}
+                                {(() => {
+                                  const studentsInSelectedGroup = globalStudents.filter(s => s.grade === selectedTeacherGroup);
+                                  const activeStudent = studentsInSelectedGroup.find(s => s.id === activeGroupStudentId) || studentsInSelectedGroup[0] || null;
+
+                                  if (!activeStudent) return null;
+
+                                  const studentData = activeStudent;
+                                  const yearKey = (studentData.grade?.[0] || "1") as Year;
+                                  const studentGrade = studentData.grade;
+
+                                  const hasIntegrationThisYear = (stats.assignedSubjects || []).some(s => {
+                                    const baseId = s.includes(':') ? s.split(':')[0] : s;
+                                    const group = s.includes(':') ? s.split(':')[1] : null;
+                                    return baseId === `int_cur_${yearKey}` && (!group || group === studentGrade);
+                                  });
+
+                                  const specificSubjectsForThisGrade = (stats.assignedSubjects || [])
+                                    .filter(s => s.includes(':') ? s.split(':')[1] === studentGrade : false)
+                                    .map(s => s.split(':')[0]);
+
+                                  const legacySubjects = (stats.assignedSubjects || [])
+                                    .filter(s => !s.includes(':'));
+
+                                  const baseSubjects = [...new Set([...specificSubjectsForThisGrade, ...legacySubjects])];
+
+                                  const subjectsToCheck = hasIntegrationThisYear 
+                                    ? (ACADEMIC_CONTENT[yearKey] || []).map(s => s.id)
+                                    : baseSubjects;
+
+                                  const totalTasks = (ACADEMIC_CONTENT[yearKey] || [])
+                                    .filter((s) => subjectsToCheck.includes(s.id))
+                                    .reduce((acc, s) => acc + s.topics.reduce((acc2, t) => acc2 + t.tasks.length, 0), 0);
+
+                                  const completedTasksCount = studentData.completedTasks.filter((taskId) =>
+                                    subjectsToCheck.some((subId) =>
+                                      (ACADEMIC_CONTENT[yearKey] || [])
+                                        .find((s) => s.id === subId)
+                                        ?.topics.some((t) => t.tasks.some((task) => task.id === taskId))
+                                    )
+                                  ).length;
+
+                                  const progress = totalTasks > 0 ? (completedTasksCount / totalTasks) * 100 : 0;
+
+                                  // Academic Rank helper
+                                  let rankName = "NÓMADA DEL CONOCIMIENTO";
+                                  let rankColor = "text-slate-400 bg-slate-500/10 border-slate-500/20";
+                                  if (activeStudent.tokens >= 200) {
+                                    rankName = "LEYENDA ACADÉMICA";
+                                    rankColor = "text-amber-400 bg-amber-500/10 border-amber-500/20";
+                                  } else if (activeStudent.tokens >= 100) {
+                                    rankName = "ALQUIMISTA EXPERTO";
+                                    rankColor = "text-purple-400 bg-purple-500/10 border-purple-500/20";
+                                  } else if (activeStudent.tokens >= 50) {
+                                    rankName = "EXPLORADOR BRONCE";
+                                    rankColor = "text-indigo-400 bg-indigo-500/10 border-indigo-500/20";
+                                  }
+
+                                  return (
+                                    <div className="lg:col-span-8 space-y-6">
+                                      {/* PROFILE CARD */}
+                                      <div className="bg-slate-900/10 border border-slate-800/60 p-6 md:p-8 rounded-[2.5rem] relative overflow-hidden text-left">
+                                        <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-indigo-500/5 to-transparent blur-3xl pointer-events-none" />
+                                        
+                                        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+                                          <div className="flex items-center gap-4 text-left">
+                                            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-600 p-0.5 shadow-lg shadow-indigo-500/10 shrink-0">
+                                              <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center overflow-hidden">
+                                                {activeStudent.avatar ? (
+                                                  <img src={activeStudent.avatar} alt={activeStudent.name} className="w-full h-full object-cover animate-fadeIn" referrerPolicy="no-referrer" />
+                                                ) : (
+                                                  <span className="text-white font-black text-lg uppercase">{activeStudent.name.charAt(0)}</span>
+                                                )}
+                                              </div>
+                                            </div>
+                                            <div>
+                                              <div className="flex flex-wrap items-center gap-2">
+                                                <h3 className="text-xl font-black text-white italic uppercase tracking-tight leading-none">{activeStudent.name}</h3>
+                                                <span className={cn("text-[8px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border", rankColor)}>
+                                                  {rankName}
+                                                </span>
+                                              </div>
+                                              <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-1.5 flex items-center gap-3">
+                                                <span>Grado: <b className="text-slate-300 font-sans">{activeStudent.grade}</b></span>
+                                                <span>•</span>
+                                                <span>ID Alumno: <b className="text-slate-300 font-sans">{activeStudent.id.substring(0, 8)}</b></span>
+                                              </p>
+                                            </div>
+                                          </div>
+
+                                          <div className="w-full md:w-auto flex flex-col gap-1 shrink-0">
+                                            <div className="w-full md:w-56 space-y-1 bg-slate-950/40 p-3 rounded-2xl border border-slate-900/80 shadow-inner">
+                                              <div className="flex justify-between items-center text-[8px] font-black uppercase tracking-widest font-sans">
+                                                <span className="text-slate-400 font-sans">Progreso de Curso</span>
+                                                <span className="text-indigo-400 font-mono">{Math.round(progress)}%</span>
+                                              </div>
+                                              <div className="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+                                                <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-700" style={{ width: `${progress}%` }} />
+                                              </div>
+                                              <div className="text-[7.5px] font-semibold text-slate-500 text-right uppercase tracking-[0.05em] font-sans">
+                                                {completedTasksCount} de {totalTasks} aprobados
+                                              </div>
+                                            </div>
+                                          </div>
                                         </div>
-                                        {isOnline ? (
-                                          <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-emerald-400 border-2 border-slate-900 rounded-full shadow-lg"></div>
+
+                                        {/* BENTO QUICK METRICS GRID */}
+                                        <div className="grid grid-cols-3 gap-3 mt-6 pt-6 border-t border-slate-800/50">
+                                          <div className="bg-slate-950/50 border border-slate-900 p-3 rounded-2xl flex items-center gap-3 hover:border-slate-800 transition-colors">
+                                            <div className="w-10 h-10 bg-amber-500/10 text-amber-500 rounded-xl flex items-center justify-center font-sans">
+                                              <Flame size={16} className="animate-pulse" />
+                                            </div>
+                                            <div className="flex flex-col text-left">
+                                              <span className="text-[8px] font-black uppercase text-slate-500 tracking-wider font-sans">Estudio Activo</span>
+                                              <span className="text-xs sm:text-sm font-black text-white">{activeStudent.streak} Dientes</span>
+                                            </div>
+                                          </div>
+
+                                          <div className="bg-slate-950/50 border border-slate-900 p-3 rounded-2xl flex items-center gap-3 hover:border-slate-800 transition-colors">
+                                            <div className="w-10 h-10 bg-cyan-500/10 text-cyan-400 rounded-xl flex items-center justify-center font-sans">
+                                              <Coins size={16} />
+                                            </div>
+                                            <div className="flex flex-col text-left">
+                                              <span className="text-[8px] font-black uppercase text-slate-500 tracking-wider font-sans">Fichas Clave</span>
+                                              <span className="text-xs sm:text-sm font-black text-white">{activeStudent.tokens} 🪙</span>
+                                            </div>
+                                          </div>
+
+                                          <div className="bg-slate-950/50 border border-slate-900 p-3 rounded-2xl flex items-center gap-3 hover:border-slate-800 transition-colors">
+                                            <div className="w-10 h-10 bg-purple-500/10 text-purple-400 rounded-xl flex items-center justify-center font-sans">
+                                              <Trophy size={16} />
+                                            </div>
+                                            <div className="flex flex-col text-left">
+                                              <span className="text-[8px] font-black uppercase text-slate-500 tracking-wider font-sans">Colección</span>
+                                              <span className="text-xs sm:text-sm font-black text-white">{(activeStudent.collection || []).length} Cartas</span>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* QUICK MOTIVAL ENCOURAGEMENT BOX */}
+                                      <div className="bg-gradient-to-r from-indigo-950/10 to-indigo-900/5 border border-indigo-500/20 p-5 rounded-[2.2rem] space-y-4 text-left">
+                                        <div className="flex items-center gap-2">
+                                          <Sparkles size={14} className="text-indigo-400" />
+                                          <h4 className="text-[10px] font-black uppercase text-indigo-300 tracking-[0.1em] font-sans">
+                                            Canal de Reconocimiento y Motivación Rápida
+                                          </h4>
+                                        </div>
+                                        <p className="text-[10px] text-slate-400 font-medium">
+                                          Envía un mensaje de motivación inmediato al alumno. Genera una notificación en tiempo real y le otorga de forma pedagógica <b className="text-amber-400">+10 fichas</b> de estímulo.
+                                        </p>
+
+                                        {/* PRESET PILLS FOR RECOGNITION */}
+                                        <div className="flex flex-wrap gap-2.5">
+                                          <button
+                                            onClick={() => handleSendEncouragement(activeStudent.id, "¡Excelente originalidad en el desarrollo de tus respuestas y gran análisis de la información! 🎉")}
+                                            className="bg-indigo-950/40 border border-indigo-900 hover:border-indigo-500 text-indigo-300 hover:text-white px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5"
+                                          >
+                                            <span>🎨 ¡Felicitar Originalidad!</span>
+                                          </button>
+                                          <button
+                                            onClick={() => handleSendEncouragement(activeStudent.id, "¡Muy bien estructurados los argumentos y el razonamiento analítico dentro de la misión! 💡")}
+                                            className="bg-indigo-950/40 border border-indigo-900 hover:border-indigo-500 text-indigo-300 hover:text-white px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5"
+                                          >
+                                            <span>💡 ¡Felicitar Razonamiento!</span>
+                                          </button>
+                                          <button
+                                            onClick={() => handleSendEncouragement(activeStudent.id, "¡Sigue adelante con esa perseverancia y excelente racha de estudio diaria! 🚀")}
+                                            className="bg-indigo-950/40 border border-indigo-900 hover:border-indigo-500 text-indigo-300 hover:text-white px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5"
+                                          >
+                                            <span>🔥 ¡Felicitar Perseverancia!</span>
+                                          </button>
+                                        </div>
+
+                                        {/* CUSTOM TEXT ENCOURAGEMENT */}
+                                        <div className="flex gap-2 text-left">
+                                          <input
+                                            type="text"
+                                            value={customMotivationText}
+                                            onChange={(e) => setCustomMotivationText(e.target.value)}
+                                            placeholder="Escribe un mensaje de felicitación e incentivo personalizado..."
+                                            className="w-full bg-slate-900/60 border border-slate-800 placeholder:text-slate-600 focus:border-indigo-500 focus:outline-none rounded-xl p-2.5 text-xs font-semibold text-white transition-all text-left"
+                                          />
+                                          <button
+                                            onClick={() => {
+                                              if (!customMotivationText.trim()) {
+                                                toast.error("Por favor, escribe un mensaje personalizado.");
+                                                return;
+                                              }
+                                              handleSendEncouragement(activeStudent.id, customMotivationText);
+                                              setCustomMotivationText("");
+                                            }}
+                                            className="bg-indigo-600 hover:bg-indigo-500 text-white p-2.5 px-4 rounded-xl text-[9px] font-black uppercase tracking-wider shrink-0 transition-transform active:scale-95 cursor-pointer flex items-center gap-1 font-sans border border-indigo-400/20"
+                                          >
+                                            <span>Enviar</span>
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      {/* SECTION: Pendientes de Revisión */}
+                                      <div className="space-y-4 text-left">
+                                        <div className="flex items-center gap-2 px-1 border-b border-slate-800 pb-2">
+                                          <Clock size={14} className="text-amber-500" />
+                                          <h4 className="text-xs font-black uppercase text-slate-200 tracking-wider">
+                                            Actividades Pendientes de Revisión ({(activeStudent.pendingTasks || []).length})
+                                          </h4>
+                                        </div>
+
+                                        {(!activeStudent.pendingTasks || activeStudent.pendingTasks.length === 0) ? (
+                                          <div className="bg-slate-900/10 border border-slate-800/40 p-10 rounded-3xl flex flex-col items-center justify-center text-center text-slate-500 font-bold text-[11px] gap-2 uppercase tracking-widest w-full">
+                                            <CheckCircle2 size={24} className="text-emerald-500/70" />
+                                            <span className="font-sans">Sin pendientes por calificar para este alumno.</span>
+                                          </div>
                                         ) : (
-                                          <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-slate-500 border-2 border-slate-900 rounded-full"></div>
+                                          <div className="space-y-4">
+                                            {activeStudent.pendingTasks.map((tId) => {
+                                              const details = lookupTaskDetails(tId);
+                                              if (!details) return null;
+
+                                              return (
+                                                <div key={tId} className="bg-slate-950 border border-slate-900 p-5 rounded-3xl space-y-4 relative overflow-hidden">
+                                                  <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-indigo-500/5 to-transparent rounded-bl-3xl"></div>
+                                                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5">
+                                                    <div>
+                                                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                                                        <span className="text-[8px] font-black uppercase tracking-widest text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-md border border-indigo-500/20">
+                                                          {details.subject.name}
+                                                        </span>
+                                                        <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 bg-slate-900 px-2 py-0.5 rounded-md border border-slate-800">
+                                                          {details.topicName}
+                                                        </span>
+                                                      </div>
+                                                      <h5 className="font-extrabold text-sm text-white uppercase tracking-wide leading-tight">
+                                                        {details.task.title}
+                                                      </h5>
+                                                      <p className="text-[11px] text-slate-400 mt-1 italic">
+                                                        {details.task.description}
+                                                      </p>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-2 self-start bg-slate-900 border border-slate-800 p-1 px-2.5 rounded-xl text-[10px] font-black font-mono text-amber-400">
+                                                      <span>+{details.task.reward.tokens}</span>
+                                                      <span>🪙</span>
+                                                    </div>
+                                                  </div>
+
+                                                  <div className="space-y-3 pt-2.5 border-t border-slate-900">
+                                                    <div>
+                                                      <span className="text-[7.5px] font-black text-slate-500 uppercase tracking-widest block mb-1">Evidencia Entregada</span>
+                                                      <div className="text-[11px] text-slate-300 leading-relaxed font-semibold italic bg-slate-900/60 border border-slate-900 p-3.5 rounded-2xl border-l-[3px] border-l-indigo-500 text-left">
+                                                        "Desafío completado con éxito. Se justificaron las respuestas aplicando el proceso pedagógico sugerido. Listo para revisión."
+                                                      </div>
+                                                    </div>
+
+                                                    <div className="flex flex-col sm:flex-row gap-2 items-center w-full">
+                                                      <input
+                                                        type="text"
+                                                        value={groupDirectFeedback}
+                                                        onChange={(e) => setGroupDirectFeedback(e.target.value)}
+                                                        placeholder="Escribe una retroalimentación opcional (Ej: ¡Excelente respuesta!)..."
+                                                        className="w-full bg-slate-900 border border-slate-800 focus:border-indigo-500 rounded-xl p-3 text-xs font-semibold text-white focus:outline-none transition-all placeholder:text-slate-750 text-left text-xs"
+                                                      />
+                                                      <button
+                                                        onClick={() => handleDirectApprove(activeStudent.id, tId)}
+                                                        className="w-full sm:w-auto px-5 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-black uppercase text-[9px] tracking-wider rounded-xl transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 shrink-0 border border-indigo-400/30 cursor-pointer font-sans"
+                                                      >
+                                                        <CheckCircle2 size={13} />
+                                                        Aprobar
+                                                      </button>
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
                                         )}
                                       </div>
-                                      <div className="min-w-0 flex-1">
-                                        <span className="font-bold text-slate-200 text-sm md:text-base truncate block">
-                                          {student.name}
-                                        </span>
-                                        <span className="text-[10px] font-black uppercase tracking-widest mt-1 block truncate">
-                                          {isOnline ? (
-                                            <span className="text-emerald-400 flex items-center gap-1">En Línea</span>
-                                          ) : (
-                                            <span className="text-slate-500">Desconectado</span>
-                                          )}
-                                        </span>
+
+                                      {/* SECTION: Actividades Realizadas */}
+                                      <div className="space-y-4 text-left">
+                                        <div className="flex items-center gap-2 px-1 border-b border-slate-800 pb-2">
+                                          <CheckCircle2 size={14} className="text-emerald-400" />
+                                          <h4 className="text-xs font-black uppercase text-slate-200 tracking-wider">
+                                            Actividades Realizadas ({activeStudent.completedTasks.length})
+                                          </h4>
+                                        </div>
+
+                                        {activeStudent.completedTasks.length === 0 ? (
+                                          <div className="bg-slate-900/10 border border-slate-800/40 p-10 rounded-3xl flex flex-col items-center justify-center text-center text-slate-500 font-bold text-[11px] gap-2 uppercase tracking-widest w-full">
+                                            <span className="font-sans">Sin registros. El estudiante no ha completado actividades aún.</span>
+                                          </div>
+                                        ) : (
+                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full animate-fadeIn">
+                                            {activeStudent.completedTasks.map((tId) => {
+                                              const details = lookupTaskDetails(tId);
+                                              if (!details) return null;
+
+                                              return (
+                                                <div key={tId} className="bg-slate-950 border border-slate-900 p-4 rounded-2xl flex items-start gap-3 hover:border-slate-800 transition-all text-left">
+                                                  <CheckCircle2 size={14} className="text-emerald-400 mt-0.5 shrink-0" />
+                                                  <div className="min-w-0 flex-1 text-left">
+                                                    <span className="text-[7.5px] font-black uppercase tracking-wider text-slate-500 block truncate">
+                                                      {details.subject.name} • {details.topicName}
+                                                    </span>
+                                                    <span className="font-extrabold text-xs text-slate-200 uppercase tracking-wide block truncate mt-0.5 font-sans">
+                                                      {details.task.title}
+                                                    </span>
+                                                    <div className="flex items-center gap-1.5 mt-1 font-mono text-[9px] text-amber-400 font-bold">
+                                                      <span>+{details.task.reward.tokens}</span>
+                                                      <span>🪙</span>
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
                                       </div>
                                     </div>
+                                  );
+                                })()}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          /* MAIN SUBJECTS & GROUPS DIRECTORY LIST */
+                          <div className="space-y-10">
+                            <div className="flex flex-col md:flex-row items-start md:items-end justify-between gap-4 md:gap-6 text-left">
+                              <div className="min-w-0 max-w-full w-full">
+                                <h2 className="text-3xl sm:text-4xl md:text-5xl font-black italic uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 to-indigo-600 pb-2 px-1 shrink-0">
+                                  Mis Grupos
+                                </h2>
+                                <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-[10px] mt-1 shrink-0">
+                                  Directorio de Alumnos por Materia
+                                </p>
+                              </div>
+                            </div>
 
-                                    <div className="flex-1 w-full md:w-auto">
-                                      <div className="flex flex-col gap-2 w-full">
-                                        <div className="flex justify-between items-end mb-0.5">
-                                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                                            Progreso del curso
-                                          </span>
-                                          <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">
-                                            {Math.round(progress)}% Dominio
-                                          </span>
-                                        </div>
-                                        <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
-                                          <div
-                                            className="h-full bg-indigo-500 shadow-lg transition-all duration-1000"
-                                            style={{
-                                              width: `${progress}%`,
-                                            }}
-                                          />
-                                        </div>
-                                      </div>
-                                    </div>
+                            {(() => {
+                              const assigned = stats.assignedSubjects || [];
+                              const hasIntegration = assigned.some((sid) => sid.startsWith("int_cur_"));
 
-                                    <div className="flex justify-end mt-2 md:mt-0 shrink-0">
-                                      <button className="w-full md:w-auto px-6 py-3 bg-slate-800 hover:bg-indigo-600 hover:border-indigo-500 text-indigo-400 hover:text-white uppercase text-[10px] sm:text-[11px] font-black tracking-widest rounded-xl md:rounded-2xl transition-all border border-slate-700 shadow-sm active:scale-95 flex items-center justify-center gap-2">
-                                        Detalles <ChevronRight size={14} className="hidden md:block opacity-70" />
-                                      </button>
+                              let subjectNamesWithIds: { id: string; name: string }[] = [];
+
+                              if (hasIntegration) {
+                                // Handle Integration Curricular
+                                const integratedYears = assigned
+                                  .filter((sid) => sid.startsWith("int_cur_"))
+                                  .map((sid) => sid.split("_")[2]);
+
+                                const allUniqueSubjects = new Map<string, string>();
+                                integratedYears.forEach((year) => {
+                                  const content = ACADEMIC_CONTENT[year as Year] || [];
+                                  content.forEach((s) => allUniqueSubjects.set(s.id, s.name));
+                                });
+
+                                assigned.forEach((sid) => {
+                                  // Extract base ID if it's the new format subjectId:groupId
+                                  const baseId = sid.includes(":") ? sid.split(":")[0] : sid;
+                                  for (const y in ACADEMIC_CONTENT) {
+                                    const s = (ACADEMIC_CONTENT[y as Year] || []).find((sub) => sub.id === baseId);
+                                    if (s) allUniqueSubjects.set(baseId, s.name);
+                                  }
+                                });
+
+                                subjectNamesWithIds = Array.from(allUniqueSubjects.entries()).map(([id, name]) => ({ id, name }));
+                              } else {
+                                const uniqueBaseIds = Array.from(new Set(assigned.map((sid) => (sid.includes(":") ? sid.split(":")[0] : sid))));
+                                subjectNamesWithIds = uniqueBaseIds
+                                  .map((sid) => {
+                                    for (const year in ACADEMIC_CONTENT) {
+                                      const yearContent = ACADEMIC_CONTENT[year as Year];
+                                      if (yearContent) {
+                                        const sub = yearContent.find((s) => s.id === sid);
+                                        if (sub) return { id: sid, name: sub.name };
+                                      }
+                                    }
+                                    return null;
+                                  })
+                                  .filter((x): x is { id: string; name: string } => x !== null);
+                              }
+
+                              return subjectNamesWithIds.map((subjectInfo) => {
+                                if (!subjectInfo) return null;
+                                const { id: sid, name: subjectName } = subjectInfo;
+
+                                let subjectYear = "1";
+                                for (const y in ACADEMIC_CONTENT) {
+                                  const yearContent = ACADEMIC_CONTENT[y as Year];
+                                  if (yearContent && yearContent.some((sub) => sub.id === sid)) {
+                                    subjectYear = y;
+                                    break;
+                                  }
+                                }
+                                
+                                // New granular logic:
+                                // If there's any mapping for this subject in the format 'subjectId:groupId', use those.
+                                // Otherwise, fall back to matching by year.
+                                const specificMappings = (stats.assignedSubjects || [])
+                                  .filter(s => s.startsWith(`${sid}:`))
+                                  .map(s => s.split(':')[1]);
+                                
+                                const groupsForSubject = specificMappings.length > 0
+                                  ? specificMappings
+                                  : (stats.assignedGroups || []).filter((g) => g.startsWith(subjectYear));
+
+                                if (groupsForSubject.length === 0) return null;
+
+                                return (
+                                  <div key={sid} className="space-y-4 bg-slate-900/40 p-6 sm:p-8 rounded-[2rem] border border-slate-800/60 shadow-inner">
+                                    <h3 className="text-lg font-black italic uppercase tracking-tighter text-slate-100 flex items-center gap-3 border-b border-slate-800/80 pb-3">
+                                      <BookOpenCheck size={18} className="text-indigo-400" />
+                                      {subjectName} <span className="text-slate-500 font-medium text-xs font-sans not-italic">({subjectYear}º Año)</span>
+                                    </h3>
+                                    <div className="flex flex-wrap gap-3 pt-1">
+                                      {groupsForSubject.map((group) => {
+                                        const isSelected = selectedTeacherGroup === group;
+                                        const studentCount = globalStudents.filter((s) => s.grade === group).length;
+                                        return (
+                                          <button
+                                            key={group}
+                                            onClick={() => setSelectedTeacherGroup(group)}
+                                            className={cn(
+                                              "relative group/btn overflow-hidden px-6 py-4 rounded-2xl flex items-center gap-4 transition-all border text-left min-w-[120px] justify-between cursor-pointer",
+                                              isSelected
+                                                ? "bg-gradient-to-br from-indigo-500/20 to-purple-500/10 border-indigo-500/80 shadow-lg shadow-indigo-500/10"
+                                                : "bg-slate-950 border-slate-800 hover:border-slate-700 hover:bg-slate-900",
+                                            )}
+                                          >
+                                            <div className="flex flex-col text-left">
+                                              <span
+                                                className={cn(
+                                                  "font-black tracking-tight text-2xl",
+                                                  isSelected ? "text-cyan-400" : "text-slate-100",
+                                                )}
+                                              >
+                                                {group}
+                                              </span>
+                                              <span
+                                                className={cn(
+                                                  "text-[8px] font-black uppercase tracking-wider mt-0.5",
+                                                  isSelected ? "text-indigo-400" : "text-slate-500",
+                                                )}
+                                              >
+                                                Alumnos
+                                              </span>
+                                            </div>
+                                            
+                                            <div className={cn(
+                                              "w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs transition-colors",
+                                              isSelected ? "bg-indigo-500 text-white" : "bg-slate-900 text-slate-400 group-hover/btn:bg-slate-800 group-hover/btn:text-slate-200"
+                                            )}>
+                                              {studentCount}
+                                            </div>
+                                          </button>
+                                        );
+                                      })}
                                     </div>
                                   </div>
                                 );
-                              })}
-                              {globalStudents.filter(s => s.grade === selectedTeacherGroup).length === 0 && (
-                                <div className="p-12 border-t border-slate-800 flex flex-col items-center justify-center text-center text-slate-500 font-bold text-xs uppercase tracking-widest">
-                                  <Users size={32} className="opacity-20 mb-4" />
-                                  No hay alumnos en este grupo
-                                </div>
-                              )}
-                            </div>
+                              });
+                            })()}
                           </div>
                         )}
                       </div>
@@ -3723,7 +4811,7 @@ export default function App() {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -20 }}
-                    className="flex flex-col min-h-[calc(100dvh-12rem)] md:min-h-[calc(100dvh-14rem)] pb-20 justify-center space-y-2 md:space-y-6 text-center"
+                    className="flex flex-col min-h-[calc(100dvh-12rem)] md:min-h-[calc(100dvh-14rem)] pb-6 justify-center space-y-2 md:space-y-6 text-center"
                   >
                     <div className="space-y-0.5 px-4 mb-2 md:mb-6 shrink-0 pt-4 md:pt-0">
                       <h2 className="text-xl md:text-2xl font-black tracking-tighter italic uppercase text-indigo-400">
@@ -4857,6 +5945,336 @@ export default function App() {
                       >
                         Confirmar Asignación
                       </button>
+                    </div>
+                  </motion.div>
+                </div>
+              )}
+
+              {showCreateChallengeModal && (
+                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/95 backdrop-blur-sm overflow-y-auto">
+                  <motion.div
+                    initial={{ scale: 0.95, opacity: 0, y: 20 }}
+                    animate={{ scale: 1, opacity: 1, y: 0 }}
+                    className="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden my-8"
+                  >
+                    <div className="p-6 md:p-8 space-y-6">
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-400 border border-indigo-500/20 shadow-inner">
+                            <Sparkles size={20} className="animate-pulse" />
+                          </div>
+                          <div>
+                            <h3 className="text-xl font-black italic uppercase tracking-tighter text-white">
+                              Crear Desafío
+                            </h3>
+                            <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest leading-none mt-0.5">
+                              Academia de Desafíos
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => setShowCreateChallengeModal(false)}
+                          className="w-8 h-8 bg-slate-800 hover:bg-slate-700 rounded-full flex items-center justify-center text-slate-500 hover:text-white transition-colors"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+
+                      {/* TABS SELECTION */}
+                      <div className="grid grid-cols-2 gap-2 bg-slate-950 p-1.5 rounded-2xl border border-slate-800/85">
+                        <button
+                          type="button"
+                          onClick={() => setCreateChallengeType("AI")}
+                          className={`py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
+                            createChallengeType === "AI"
+                              ? "bg-slate-800 text-cyan-400 border border-slate-700/60 shadow-lg"
+                              : "text-slate-500 hover:text-slate-300"
+                          }`}
+                        >
+                          <Sparkles size={14} /> Generar con IA
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCreateChallengeType("Manual")}
+                          className={`py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
+                            createChallengeType === "Manual"
+                              ? "bg-slate-800 text-indigo-400 border border-slate-700/60 shadow-lg"
+                              : "text-slate-500 hover:text-slate-300"
+                          }`}
+                        >
+                          <PenTool size={14} /> Creación Manual
+                        </button>
+                      </div>
+
+                      {/* AI FORM PANEL */}
+                      {createChallengeType === "AI" && (
+                        <div className="space-y-4">
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Materia</label>
+                            <select
+                              value={aiChallengeForm.subjectId}
+                              onChange={(e) => setAiChallengeForm(prev => ({ ...prev, subjectId: e.target.value }))}
+                              className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500/50 outline-none transition-all cursor-pointer"
+                            >
+                              <option value="" disabled className="text-slate-500 bg-slate-950">Selecciona una materia...</option>
+                              {["1", "2", "3"].map((grade) => {
+                                const list = getSubjectListHelper().filter(s => s.grade === grade);
+                                const labelText = grade === "1" ? "🟢 1º GRADO (PRIMARIA/SECUNDARIA)" : grade === "2" ? "🔵 2º GRADO (PLAN SEP)" : "🟣 3º GRADO (CIERRE)";
+                                const colorClass = grade === "1" ? "text-emerald-400" : grade === "2" ? "text-cyan-400" : "text-purple-400";
+                                return (
+                                  <optgroup 
+                                    key={grade} 
+                                    label={labelText}
+                                    className={`${colorClass} bg-slate-950 font-black uppercase tracking-wider text-xs p-2`}
+                                  >
+                                    {list.map((s) => (
+                                      <option 
+                                        key={s.id} 
+                                        value={s.id}
+                                        className="text-slate-200 bg-slate-950 font-medium normal-case py-2 pl-4 text-sm"
+                                      >
+                                        &nbsp;&nbsp;&nbsp;{s.name}
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                );
+                              })}
+                            </select>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Tema Principal o Contenido Académico *</label>
+                            <input
+                              type="text"
+                              required
+                              value={aiChallengeForm.topicName}
+                              onChange={(e) => setAiChallengeForm(prev => ({ ...prev, topicName: e.target.value }))}
+                              placeholder="Ej. Ecuaciones lineales de primer grado, Ley de conservación de energía"
+                              className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500/50 outline-none transition-all placeholder:text-slate-700"
+                            />
+                            <p className="text-[9px] text-slate-500 ml-1 leading-normal italic">Consistente con los programas oficiales de la SEP.</p>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Sugerencias o Ideas Especiales (Opcional)</label>
+                            <textarea
+                              value={aiChallengeForm.idea}
+                              onChange={(e) => setAiChallengeForm(prev => ({ ...prev, idea: e.target.value }))}
+                              placeholder="Ej. Quiero que sea un desafío de tipo práctico, o que incluya un acertijo matemático ambientado en el espacio..."
+                              rows={3}
+                              className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500/50 outline-none transition-all placeholder:text-slate-700 resize-none"
+                            />
+                          </div>
+
+                          <button
+                            type="button"
+                            disabled={isGeneratingAIChallenge}
+                            onClick={handleGenerateAIChallenge}
+                            className="w-full py-5 bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-800 text-white rounded-3xl font-black uppercase tracking-widest text-xs shadow-md active:scale-95 transition-all shadow-cyan-600/20 disabled:animate-pulse flex items-center justify-center gap-3 border border-cyan-500/10"
+                          >
+                            {isGeneratingAIChallenge ? (
+                              <>
+                                <Loader2 size={16} className="animate-spin" />
+                                Diseñando Desafío Inteligente...
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles size={16} className="text-cyan-200 animate-bounce" />
+                                Generar Desafío con IA
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      )}
+
+                      {/* MANUAL FORM PANEL */}
+                      {createChallengeType === "Manual" && (
+                        <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Materia</label>
+                              <select
+                                value={manualChallengeForm.subjectId}
+                                onChange={(e) => setManualChallengeForm(prev => ({ ...prev, subjectId: e.target.value }))}
+                                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-3 text-white text-xs focus:border-indigo-500/50 outline-none cursor-pointer"
+                              >
+                                <option value="" disabled className="text-slate-500 bg-slate-950">Selecciona una materia...</option>
+                                {["1", "2", "3"].map((grade) => {
+                                  const list = getSubjectListHelper().filter(s => s.grade === grade);
+                                  const labelText = grade === "1" ? "🟢 1º GRADO (PRIMARIA/SECUNDARIA)" : grade === "2" ? "🔵 2º GRADO (PLAN SEP)" : "🟣 3º GRADO (CIERRE)";
+                                  const colorClass = grade === "1" ? "text-emerald-400" : grade === "2" ? "text-cyan-400" : "text-purple-400";
+                                  return (
+                                    <optgroup 
+                                      key={grade} 
+                                      label={labelText}
+                                      className={`${colorClass} bg-slate-950 font-black uppercase tracking-wider text-xs p-1`}
+                                    >
+                                      {list.map((s) => (
+                                        <option 
+                                          key={s.id} 
+                                          value={s.id}
+                                          className="text-slate-200 bg-slate-950 font-medium normal-case py-2 pl-4 text-xs"
+                                        >
+                                          &nbsp;&nbsp;&nbsp;{s.name}
+                                        </option>
+                                      ))}
+                                    </optgroup>
+                                  );
+                                })}
+                              </select>
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Grupo de Alumnos Destino</label>
+                              <select
+                                value={manualChallengeForm.group}
+                                onChange={(e) => setManualChallengeForm(prev => ({ ...prev, group: e.target.value }))}
+                                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-3 text-white text-xs focus:border-indigo-500/50 outline-none cursor-pointer"
+                              >
+                                <option value="A">Grupo A</option>
+                                <option value="B">Grupo B</option>
+                                <option value="C">Grupo C</option>
+                                <option value="D">Grupo D</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Bloque / Sector (Tema principal) *</label>
+                            <input
+                              type="text"
+                              required
+                              value={manualChallengeForm.topicName}
+                              onChange={(e) => setManualChallengeForm(prev => ({ ...prev, topicName: e.target.value }))}
+                              placeholder="Ej. Suma de Fracciones"
+                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-xs focus:border-indigo-500/50 outline-none placeholder:text-slate-700"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Título del Desafío *</label>
+                            <input
+                              type="text"
+                              required
+                              value={manualChallengeForm.title}
+                              onChange={(e) => setManualChallengeForm(prev => ({ ...prev, title: e.target.value }))}
+                              placeholder="Ej. El Desafío del Repartidor de Pasteles"
+                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-xs focus:border-indigo-500/50 outline-none placeholder:text-slate-700"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Descripción Breve *</label>
+                            <input
+                              type="text"
+                              required
+                              value={manualChallengeForm.description}
+                              onChange={(e) => setManualChallengeForm(prev => ({ ...prev, description: e.target.value }))}
+                              placeholder="Ej. Resuelve los ejercicios prácticos para ganar fichas y medallas."
+                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-xs focus:border-indigo-500/50 outline-none placeholder:text-slate-700"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Instrucciones Detalladas del Desafío *</label>
+                            <textarea
+                              required
+                              value={manualChallengeForm.instructions}
+                              onChange={(e) => setManualChallengeForm(prev => ({ ...prev, instructions: e.target.value }))}
+                              placeholder="Escribe el texto detallado de la actividad o el planteamiento detallado..."
+                              rows={3}
+                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-xs focus:border-indigo-500/50 outline-none placeholder:text-slate-700 resize-none"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Dificultad</label>
+                              <select
+                                value={manualChallengeForm.difficulty}
+                                onChange={(e) => setManualChallengeForm(prev => ({ ...prev, difficulty: e.target.value as any }))}
+                                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-3 text-white text-xs focus:border-indigo-500/50 outline-none cursor-pointer"
+                              >
+                                <option value="Easy">Fácil (+25 Tokens)</option>
+                                <option value="Medium">Medio (+50 Tokens)</option>
+                                <option value="Hard">Difícil (+150 Tokens & Sobre)</option>
+                              </select>
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Tipo de Actividad</label>
+                              <select
+                                value={manualChallengeForm.type}
+                                onChange={(e) => setManualChallengeForm(prev => ({ ...prev, type: e.target.value as any }))}
+                                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-3 text-white text-xs focus:border-indigo-500/50 outline-none cursor-pointer"
+                              >
+                                <option value="Exercise">Práctica Escrita (Reporte)</option>
+                                <option value="Quiz">Examen Opciones (Quiz)</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {manualChallengeForm.type === "Quiz" && (
+                            <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-3">
+                              <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Opciones de Respuesta del Quiz</p>
+                              <div className="grid grid-cols-1 gap-2">
+                                {manualChallengeForm.quizOptions.map((opt, oIdx) => (
+                                  <div key={oIdx} className="flex items-center gap-2">
+                                    <span className="text-[10px] font-black text-slate-500 w-4">{String.fromCharCode(65 + oIdx)})</span>
+                                    <input
+                                      type="text"
+                                      value={opt}
+                                      placeholder={`Opción ${String.fromCharCode(65 + oIdx)}`}
+                                      onChange={(e) => {
+                                        const optionsCopy = [...manualChallengeForm.quizOptions];
+                                        optionsCopy[oIdx] = e.target.value;
+                                        setManualChallengeForm(prev => ({ ...prev, quizOptions: optionsCopy }));
+                                      }}
+                                      className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white text-xs focus:border-indigo-500/30 outline-none"
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="space-y-1.5 pt-2">
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Opción Correcta</label>
+                                <select
+                                  value={manualChallengeForm.quizAnswer}
+                                  onChange={(e) => setManualChallengeForm(prev => ({ ...prev, quizAnswer: parseInt(e.target.value) }))}
+                                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white text-xs focus:border-indigo-500/30 outline-none cursor-pointer"
+                                >
+                                  <option value={0}>A</option>
+                                  <option value={1}>B</option>
+                                  <option value={2}>C</option>
+                                  <option value={3}>D</option>
+                                </select>
+                              </div>
+                            </div>
+                          )}
+
+                          {manualChallengeForm.type === "Exercise" && (
+                            <div className="flex items-center gap-3 p-3 bg-slate-950 rounded-xl border border-slate-800">
+                              <input 
+                                type="checkbox"
+                                id="evidenceRequiredCheck"
+                                checked={manualChallengeForm.evidenceRequired}
+                                onChange={(e) => setManualChallengeForm(prev => ({ ...prev, evidenceRequired: e.target.checked }))}
+                                className="w-4 h-4 text-indigo-600 bg-slate-900 border-slate-800 rounded focus:ring-indigo-500/30"
+                              />
+                              <label htmlFor="evidenceRequiredCheck" className="text-xs text-slate-350 cursor-pointer select-none">
+                                Exigir entrega de evidencia escaneada o foto para aprobar
+                              </label>
+                            </div>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={handleSaveManualChallenge}
+                            className="w-full py-5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-3xl font-black uppercase tracking-widest text-xs shadow-md active:scale-95 transition-all shadow-indigo-600/20 mt-4"
+                          >
+                            Crear y Asignar Desafío Manual 📝
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </motion.div>
                 </div>

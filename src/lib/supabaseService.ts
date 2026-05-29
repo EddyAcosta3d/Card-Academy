@@ -15,6 +15,60 @@ const normalizeEmail = (username: string) => {
   return `${normalized}@cardacademy.app`;
 };
 
+// Helpers for local notifications fallback when table does not exist in Supabase
+const getLocalNotifications = (userId: string): AppNotification[] => {
+  try {
+    const all: any[] = JSON.parse(localStorage.getItem('cardacademy_local_notifs') || '[]');
+    return all
+      .filter(n => n.userId === userId || n.user_id === userId)
+      .map(n => ({
+        id: n.id || `local_${Date.now()}_${Math.random()}`,
+        userId: n.userId || n.user_id || userId,
+        title: n.title,
+        message: n.message,
+        type: n.type || 'info',
+        isRead: !!(n.isRead || n.is_read),
+        createdAt: n.createdAt || n.created_at || new Date().toISOString()
+      }));
+  } catch (e) {
+    return [];
+  }
+};
+
+const saveLocalNotification = (userId: string, notif: any) => {
+  try {
+    const all: any[] = JSON.parse(localStorage.getItem('cardacademy_local_notifs') || '[]');
+    all.unshift({
+      id: notif.id || `local_${Date.now()}_${Math.random()}`,
+      userId,
+      title: notif.title,
+      message: notif.message,
+      type: notif.type || 'info',
+      isRead: !!notif.isRead,
+      createdAt: notif.createdAt || new Date().toISOString()
+    });
+    localStorage.setItem('cardacademy_local_notifs', JSON.stringify(all));
+  } catch (e) {
+    console.error('[Fallback Storage] Error saving local notification:', e);
+  }
+};
+
+const markLocalNotificationAsRead = (notificationId: string) => {
+  try {
+    const all: any[] = JSON.parse(localStorage.getItem('cardacademy_local_notifs') || '[]');
+    const updated = all.map(n => n.id === notificationId ? { ...n, isRead: true, is_read: true } : n);
+    localStorage.setItem('cardacademy_local_notifs', JSON.stringify(updated));
+  } catch (e) {}
+};
+
+const markAllLocalNotificationsAsRead = (userId: string) => {
+  try {
+    const all: any[] = JSON.parse(localStorage.getItem('cardacademy_local_notifs') || '[]');
+    const updated = all.map(n => (n.userId === userId || n.user_id === userId) ? { ...n, isRead: true, is_read: true } : n);
+    localStorage.setItem('cardacademy_local_notifs', JSON.stringify(updated));
+  } catch (e) {}
+};
+
 // Flag to avoid retrying last_active if it's missing in DB
 let isLastActiveColumnPresent = true;
 
@@ -23,19 +77,34 @@ export const supabaseService = {
     try {
       const stats = await this.fetchUserStats(userId);
       
-      // Proactive admin elevation
-      if (stats.username.toLowerCase() === 'admin' && stats.role === 'Student') {
-        console.log('[Supabase] Elevando usuario admin a rol Admin automáticamente...');
-        stats.role = 'Admin';
-        stats.grade = '1A';
-        stats.assignedGroups = [];
-        stats.assignedSubjects = [];
-        await this.updateUserStats(userId, { 
-          role: 'Admin', 
-          grade: '1A',
-          assignedGroups: [],
-          assignedSubjects: []
-        });
+      // Proactive admin validation and Correction
+      if (stats.username.toLowerCase() === 'admin' || stats.role === 'Admin') {
+        let updated = false;
+        if (stats.role !== 'Admin') {
+          stats.role = 'Admin';
+          updated = true;
+        }
+        if (stats.grade !== 'Administración') {
+          stats.grade = 'Administración';
+          updated = true;
+        }
+        if (stats.assignedGroups && stats.assignedGroups.length > 0) {
+          stats.assignedGroups = [];
+          updated = true;
+        }
+        if (stats.assignedSubjects && stats.assignedSubjects.length > 0) {
+          stats.assignedSubjects = [];
+          updated = true;
+        }
+        if (updated) {
+          console.log('[Supabase] Corrigiendo perfil de administrador detectado...');
+          await this.updateUserStats(userId, { 
+            role: 'Admin', 
+            grade: 'Administración',
+            assignedGroups: [],
+            assignedSubjects: []
+          });
+        }
       }
       return stats;
     } catch (error: any) {
@@ -141,7 +210,7 @@ export const supabaseService = {
       id: dataAuth.user.id,
       username,
       role,
-      grade: grade || (role === 'Student' ? '2A' : (role === 'Teacher' ? 'Cuerpo Académico' as any : '1A' as any)),
+      grade: grade || (role === 'Student' ? '2A' : (role === 'Teacher' ? 'Cuerpo Académico' as any : 'Administración' as any)),
       tokens: 0,
       streak: 0,
       collection: [],
@@ -323,14 +392,14 @@ export const supabaseService = {
     };
 
     // Proactive correction for admin role
-    if (stats.username.toLowerCase() === 'admin' && stats.role === 'Student') {
-      console.log('[Supabase] Corrigiendo rol de admin en recuperación de sesión...');
-      stats.role = 'Admin';
-      stats.grade = '1A';
-      stats.assignedGroups = [];
-      stats.assignedSubjects = [];
-      // We don't necessarily update DB here to avoid side-effects in a 'fetch' call, 
-      // but the UI will see the correct role.
+    if (stats.username.toLowerCase() === 'admin' || stats.role === 'Admin') {
+      if (stats.grade !== 'Administración' || stats.role !== 'Admin' || stats.assignedGroups.length > 0 || stats.assignedSubjects.length > 0) {
+        console.log('[Supabase] Corrigiendo rol/grado de admin en recuperación de sesión...');
+        stats.role = 'Admin';
+        stats.grade = 'Administración';
+        stats.assignedGroups = [];
+        stats.assignedSubjects = [];
+      }
     }
 
     return stats;
@@ -518,74 +587,125 @@ export const supabaseService = {
     });
   },
 
+  async resetPasswordDirectly(username: string, newPassword: string, masterKey: string) {
+    const response = await fetch('/api/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, newPassword, masterKey })
+    });
+    
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Error al cambiar contraseña.');
+    return data;
+  },
+
   // Notifications
   async fetchNotifications(userId: string): Promise<AppNotification[]> {
-    const { data, error } = await supabase
-      .from('notifications')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
 
-    if (error) {
-      console.error('[Supabase] Error fetching notifications:', error.message);
-      return [];
+      if (error) {
+        // Suppress scary console error for expected developer setups where table hasn't been created yet
+        if (error.message?.includes('public.notifications') || error.message?.includes('relation "notifications"')) {
+          console.warn('[Supabase Setup] La tabla "notifications" no está configurada aún en Supabase. Usando fallback de almacenamiento local.');
+        } else {
+          console.error('[Supabase] Error fetching notifications:', error.message);
+        }
+        return getLocalNotifications(userId);
+      }
+
+      const dbNotifications: AppNotification[] = (data || []).map(n => ({
+        id: n.id,
+        userId: n.user_id,
+        title: n.title,
+        message: n.message,
+        type: (n.type || 'info') as 'info' | 'success' | 'warning' | 'error',
+        isRead: !!n.is_read,
+        createdAt: n.created_at
+      }));
+
+      // Combine with local notifications that are not stored in db
+      const localNotifs = getLocalNotifications(userId);
+      const combined = [...dbNotifications];
+      for (const ln of localNotifs) {
+        if (!combined.some(dn => dn.title === ln.title && dn.message === ln.message && Math.abs(new Date(dn.createdAt).getTime() - new Date(ln.createdAt).getTime()) < 10000)) {
+          combined.push(ln);
+        }
+      }
+      return combined.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    } catch (e: any) {
+      console.warn('[Supabase Fallback] Error al obtener notificaciones, usando local storage:', e.message || e);
+      return getLocalNotifications(userId);
     }
-
-    return data.map(n => ({
-      id: n.id,
-      userId: n.user_id,
-      title: n.title,
-      message: n.message,
-      type: n.type,
-      isRead: n.is_read,
-      createdAt: n.created_at
-    }));
   },
 
   async markNotificationAsRead(notificationId: string) {
-    const { error } = await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('id', notificationId);
-    
-    if (error) throw error;
+    try {
+      if (!notificationId.startsWith('local_')) {
+        const { error } = await supabase
+          .from('notifications')
+          .update({ is_read: true })
+          .eq('id', notificationId);
+        
+        if (error && !error.message?.includes('public.notifications') && !error.message?.includes('relation "notifications"')) {
+          throw error;
+        }
+      }
+    } catch (e) {}
+    // Mark as read in local storage too to ensure consistent state
+    markLocalNotificationAsRead(notificationId);
   },
 
   async markAllNotificationsAsRead(userId: string) {
-    const { error } = await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('user_id', userId)
-      .eq('is_read', false);
-    
-    if (error) throw error;
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('user_id', userId)
+        .eq('is_read', false);
+      
+      if (error && !error.message?.includes('public.notifications') && !error.message?.includes('relation "notifications"')) {
+        throw error;
+      }
+    } catch (e) {}
+    // Mark all as read locally too
+    markAllLocalNotificationsAsRead(userId);
   },
 
   async sendNotification(userId: string, title: string, message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') {
-    const { error } = await supabase
-      .from('notifications')
-      .insert({
-        user_id: userId,
+    let dbSuccess = false;
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: userId,
+          title,
+          message,
+          type,
+          is_read: false
+        });
+      
+      if (error) {
+        if (!error.message?.includes('public.notifications') && !error.message?.includes('relation "notifications"')) {
+          console.error('[Supabase] Error sending notification:', error.message);
+        }
+      } else {
+        dbSuccess = true;
+      }
+    } catch (e) {}
+
+    // Fallback to local storage
+    if (!dbSuccess) {
+      saveLocalNotification(userId, {
         title,
         message,
         type,
-        is_read: false
+        isRead: false
       });
-    
-    if (error) {
-      console.error('[Supabase] Error sending notification:', error.message);
-      // Fallback a localStorage para que al menos se vea en la sesión actual si falla la red
-      const localNotifs = JSON.parse(localStorage.getItem('cardacademy_local_notifs') || '[]');
-      localNotifs.push({
-        id: `local_${Date.now()}`,
-        userId,
-        title,
-        message,
-        type,
-        isRead: false,
-        createdAt: new Date().toISOString()
-      });
-      localStorage.setItem('cardacademy_local_notifs', JSON.stringify(localNotifs));
     }
   }
 };
