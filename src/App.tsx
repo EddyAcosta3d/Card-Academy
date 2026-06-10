@@ -86,6 +86,9 @@ import { PackOpening } from "./components/PackOpening";
 import { DailyChallenge } from "./components/DailyChallenge";
 import { LoginPage } from "./components/LoginPage";
 import { Logo } from "./components/Logo";
+import { ProfileModal } from "./components/ProfileModal";
+import { AdminAvatarApprovals } from "./components/AdminAvatarApprovals";
+import { AdminDashboardPendientes } from "./components/AdminDashboardPendientes";
 import {
   UserStats,
   Card as CardType,
@@ -94,7 +97,7 @@ import {
   UserRole,
   Pack,
   Year,
-  AppNotification
+  AppNotification,
 } from "./types";
 import {
   INITIAL_CARDS,
@@ -121,6 +124,7 @@ export type Student = {
   streak: number;
   tokens: number;
   lastActive?: string;
+  packCurrencies?: any;
 };
 
 export type TeacherModel = {
@@ -168,22 +172,30 @@ const SubjectIcon = ({ name, size = 28 }: { name: string; size?: number }) => {
   return <Icon size={size} />;
 };
 
-const AnimatedTokens = ({ tokens, className }: { tokens: number; className?: string }) => {
+const AnimatedTokens = ({
+  tokens,
+  className,
+}: {
+  tokens: number;
+  className?: string;
+}) => {
   const [prevTokens, setPrevTokens] = useState(tokens);
-  const [animations, setAnimations] = useState<{ id: number; diff: number }[]>([]);
+  const [animations, setAnimations] = useState<{ id: number; diff: number }[]>(
+    [],
+  );
   const nextId = useRef(0);
 
   useEffect(() => {
     if (tokens > prevTokens) {
       const diff = tokens - prevTokens;
       const id = nextId.current++;
-      setAnimations(a => [...a, { id, diff }]);
+      setAnimations((a) => [...a, { id, diff }]);
 
       // Trigger coin sound
       playCoinSound();
 
       setTimeout(() => {
-        setAnimations(a => a.filter(anim => anim.id !== id));
+        setAnimations((a) => a.filter((anim) => anim.id !== id));
       }, 2000);
     }
     setPrevTokens(tokens);
@@ -211,30 +223,31 @@ const AnimatedTokens = ({ tokens, className }: { tokens: number; className?: str
 };
 
 const renderCompactSubjects = (assigned: string[]) => {
-  if (!assigned || assigned.length === 0) return (
-    <span className="text-[9px] font-black text-slate-600 uppercase italic">
-      Sin asignar
-    </span>
-  );
+  if (!assigned || assigned.length === 0)
+    return (
+      <span className="text-[9px] font-black text-slate-600 uppercase italic">
+        Sin asignar
+      </span>
+    );
 
   // Group by base subject ID
   const groupsBySubject = new Map<string, Set<string>>();
-  
-  assigned.forEach(sid => {
-    const parts = sid.includes(':') ? sid.split(':') : [sid];
+
+  assigned.forEach((sid) => {
+    const parts = sid.includes(":") ? sid.split(":") : [sid];
     const subId = parts[0];
-    const groupId = parts.slice(1).join(':');
-    
+    const groupId = parts.slice(1).join(":");
+
     if (!groupsBySubject.has(subId)) groupsBySubject.set(subId, new Set());
     if (groupId) groupsBySubject.get(subId)!.add(groupId);
   });
 
   return Array.from(groupsBySubject.entries()).map(([sid, groups]) => {
-    let prettyName = sid.replace('_', ' ').toUpperCase();
-    let year = sid.split('_')[1] || '';
-    
+    let prettyName = sid.replace("_", " ").toUpperCase();
+    let year = sid.split("_")[1] || "";
+
     for (const y in ACADEMIC_CONTENT) {
-      const sub = (ACADEMIC_CONTENT[y as Year] || []).find(s => s.id === sid);
+      const sub = (ACADEMIC_CONTENT[y as Year] || []).find((s) => s.id === sid);
       if (sub) {
         prettyName = sub.name;
         year = y;
@@ -243,18 +256,25 @@ const renderCompactSubjects = (assigned: string[]) => {
     }
 
     // Identificación especial para Integración Curricular
-    if (prettyName.toLowerCase().includes('integración') || prettyName.toLowerCase().includes('int.')) {
-        prettyName = 'INT';
-    } else if (prettyName.toLowerCase().includes('tecnología')) {
-        prettyName = 'TEC';
+    if (
+      prettyName.toLowerCase().includes("integración") ||
+      prettyName.toLowerCase().includes("int.")
+    ) {
+      prettyName = "INT";
+    } else if (prettyName.toLowerCase().includes("tecnología")) {
+      prettyName = "TEC";
     }
 
-    const groupList = Array.from(groups).sort().join(',');
-    const groupLabel = groupList ? ` (${groupList})` : '';
+    const groupList = Array.from(groups).sort().join(",");
+    const groupLabel = groupList ? ` (${groupList})` : "";
 
     return (
-      <div key={sid} className="px-2 py-0.5 bg-cyan-900/40 border border-cyan-500/40 text-cyan-200 rounded text-[9px] font-black uppercase whitespace-nowrap shadow-sm">
-        {prettyName}{groupLabel}
+      <div
+        key={sid}
+        className="px-2 py-0.5 bg-cyan-900/40 border border-cyan-500/40 text-cyan-200 rounded text-[9px] font-black uppercase whitespace-nowrap shadow-sm"
+      >
+        {prettyName}
+        {groupLabel}
       </div>
     );
   });
@@ -265,11 +285,17 @@ export default function App() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [showChallengeModal, setShowChallengeModal] = useState(false);
-  const [selectedTeacherGroup, setSelectedTeacherGroup] = useState<string | null>(null);
-  const [activeGroupStudentId, setActiveGroupStudentId] = useState<string | null>(null);
+  const [selectedTeacherGroup, setSelectedTeacherGroup] = useState<
+    string | null
+  >(null);
+  const [activeGroupStudentId, setActiveGroupStudentId] = useState<
+    string | null
+  >(null);
   const [groupDirectFeedback, setGroupDirectFeedback] = useState<string>("");
   const [groupStudentSearch, setGroupStudentSearch] = useState<string>("");
-  const [activeStudentFilter, setActiveStudentFilter] = useState<'all' | 'pending' | 'online'>('all');
+  const [activeStudentFilter, setActiveStudentFilter] = useState<
+    "all" | "pending" | "online"
+  >("all");
   const [customMotivationText, setCustomMotivationText] = useState<string>("");
   const defaultStats: UserStats = {
     grade: "2A",
@@ -281,14 +307,32 @@ export default function App() {
     tokens: 5000,
     streak: 15,
     collection: [
-      "coll_A1_01", "coll_A1_03", "coll_A1_05", "coll_A1_07", "coll_A1_12", 
-      "coll_A2_02", "coll_A2_04", "coll_A2_06",
-      "coll_A3_01", "coll_A3_04", "coll_A3_08",
-      "achiev_1", "achiev_2", "achiev_3", "achiev_5", "achiev_17",
-      "reward_1", "reward_3", "reward_4"
+      "coll_A1_01",
+      "coll_A1_03",
+      "coll_A1_05",
+      "coll_A1_07",
+      "coll_A1_12",
+      "coll_A2_02",
+      "coll_A2_04",
+      "coll_A2_06",
+      "coll_A3_01",
+      "coll_A3_04",
+      "coll_A3_08",
+      "achiev_1",
+      "achiev_2",
+      "achiev_3",
+      "achiev_5",
+      "achiev_17",
+      "reward_1",
+      "reward_3",
+      "reward_4",
     ],
     unstickedCards: [
-      "coll_A1_02", "coll_A2_01", "coll_A3_02", "achiev_4", "reward_2"
+      "coll_A1_02",
+      "coll_A2_01",
+      "coll_A3_02",
+      "achiev_4",
+      "reward_2",
     ],
     completedTasks: [],
     dailyLimits: {
@@ -301,7 +345,7 @@ export default function App() {
       pack_jacobo: 1000,
       pack_culiacan: 1000,
       pack_six_seven: 1000,
-    }
+    },
   };
 
   const [stats, setStats] = useState<UserStats>(defaultStats);
@@ -312,22 +356,23 @@ export default function App() {
   // Heartbeat for real-time status
   useEffect(() => {
     if (!currentUserId) return;
-    
+
     // Initial heartbeat
     supabaseService.heartbeat(currentUserId);
-    
+
     // Periodic heartbeat every 60 seconds
     const interval = setInterval(() => {
       supabaseService.heartbeat(currentUserId);
     }, 60000);
-    
+
     return () => clearInterval(interval);
   }, [currentUserId]);
 
   const loadNotifications = React.useCallback(async () => {
     if (!currentUserId) return;
     try {
-      const realTimeNotifs = await supabaseService.fetchNotifications(currentUserId);
+      const realTimeNotifs =
+        await supabaseService.fetchNotifications(currentUserId);
       setNotifications(realTimeNotifs);
     } catch (error) {
       console.error("Error loading notifications:", error);
@@ -349,30 +394,58 @@ export default function App() {
     selectedGroups: string[];
     selectedSubjects: string[];
     activeYear: Year;
-  }>({ teacherId: null, isOpen: false, selectedGroups: [], selectedSubjects: [], activeYear: "1" });
+  }>({
+    teacherId: null,
+    isOpen: false,
+    selectedGroups: [],
+    selectedSubjects: [],
+    activeYear: "1",
+  });
 
-  const [adminDashboardTab, setAdminDashboardTab] = useState<"stats" | "teachers" | "students">("stats");
+  const [adminDashboardTab, setAdminDashboardTab] = useState<
+    "stats" | "teachers" | "students" | "avatars" | "pendientes"
+  >("stats");
   const [showPasswordModal, setShowPasswordModal] = useState(false);
-  const [showCreateUserModal, setShowCreateUserModal] = useState<{ isOpen: boolean; role: "Teacher" | "Student" }>({ isOpen: false, role: "Teacher" });
-  const [userToDelete, setUserToDelete] = useState<{ id: string, name: string, role: string } | null>(null);
-  const [createUserForm, setCreateUserForm] = useState({ username: "", email: "", password: "", grade: "" });
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showCreateUserModal, setShowCreateUserModal] = useState<{
+    isOpen: boolean;
+    role: "Teacher" | "Student";
+  }>({ isOpen: false, role: "Teacher" });
+  const [userToDelete, setUserToDelete] = useState<{
+    id: string;
+    name: string;
+    role: string;
+  } | null>(null);
+  const [createUserForm, setCreateUserForm] = useState({
+    username: "",
+    email: "",
+    password: "",
+    grade: "",
+  });
   const [isDeletingUser, setIsDeletingUser] = useState(false);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
-  const [passwordForm, setPasswordForm] = useState({ current: "", new: "", confirm: "" });
+  const [passwordForm, setPasswordForm] = useState({
+    current: "",
+    new: "",
+    confirm: "",
+  });
   const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   // States for custom & AI challenge creation
   const [customTasks, setCustomTasks] = useState<any[]>(() => {
     try {
-      const saved = localStorage.getItem('cardacademy_custom_tasks');
+      const saved = localStorage.getItem("cardacademy_custom_tasks");
       return saved ? JSON.parse(saved) : [];
     } catch (e) {
       return [];
     }
   });
 
-  const [showCreateChallengeModal, setShowCreateChallengeModal] = useState(false);
-  const [createChallengeType, setCreateChallengeType] = useState<"AI" | "Manual">("AI");
+  const [showCreateChallengeModal, setShowCreateChallengeModal] =
+    useState(false);
+  const [createChallengeType, setCreateChallengeType] = useState<
+    "AI" | "Manual"
+  >("AI");
   const [isGeneratingAIChallenge, setIsGeneratingAIChallenge] = useState(false);
 
   // AI fields
@@ -399,10 +472,13 @@ export default function App() {
   });
 
   const addCustomTask = (newTask: any) => {
-    setCustomTasks(prev => {
+    setCustomTasks((prev) => {
       const updated = [...prev, newTask];
       try {
-        localStorage.setItem('cardacademy_custom_tasks', JSON.stringify(updated));
+        localStorage.setItem(
+          "cardacademy_custom_tasks",
+          JSON.stringify(updated),
+        );
       } catch (e) {
         console.error("Error saving custom tasks", e);
       }
@@ -412,7 +488,9 @@ export default function App() {
 
   const handleGenerateAIChallenge = async () => {
     if (!aiChallengeForm.subjectId || !aiChallengeForm.topicName) {
-      toast.error("Por favor completa la materia y el tema para que la IA pueda crear el desafío.");
+      toast.error(
+        "Por favor completa la materia y el tema para que la IA pueda crear el desafío.",
+      );
       return;
     }
 
@@ -439,10 +517,12 @@ export default function App() {
       const generated = data.challenge;
 
       // Map to CustomTask structure
-      const selectedSubForAI = getSubjectListHelper().find(s => s.id === aiChallengeForm.subjectId);
+      const selectedSubForAI = getSubjectListHelper().find(
+        (s) => s.id === aiChallengeForm.subjectId,
+      );
       const yearChar = selectedSubForAI ? selectedSubForAI.grade : "1";
       const targetGradeGroup = `${yearChar}A`; // Will assign to active group of that year
-      
+
       const newchallenge = {
         id: `custom_task_ai_${Date.now()}`,
         title: generated.title,
@@ -451,23 +531,30 @@ export default function App() {
         difficulty: generated.difficulty || "Medium",
         type: generated.type || "Exercise",
         quizOptions: generated.quizOptions || [],
-        quizAnswer: generated.quizAnswer !== undefined ? generated.quizAnswer : -1,
+        quizAnswer:
+          generated.quizAnswer !== undefined ? generated.quizAnswer : -1,
         isAIQuiz: generated.type === "Quiz",
         reward: {
           tokens: generated.tokensReward || 50,
-          pack: Math.random() > 0.6
+          pack: Math.random() > 0.6,
         },
         evidenceRequired: generated.evidenceRequired || false,
         subjectId: aiChallengeForm.subjectId,
         gradeGroup: targetGradeGroup,
         topicName: aiChallengeForm.topicName,
-        topicId: `t_custom_${aiChallengeForm.subjectId}_${aiChallengeForm.topicName.trim().replace(/\s+/g, '_').toLowerCase()}`
+        topicId: `t_custom_${aiChallengeForm.subjectId}_${aiChallengeForm.topicName.trim().replace(/\s+/g, "_").toLowerCase()}`,
       };
 
       addCustomTask(newchallenge);
-      toast.success(`🎉 Desafío "${generated.title}" diseñado con IA y asignado!`);
+      toast.success(
+        `🎉 Desafío "${generated.title}" diseñado con IA y asignado!`,
+      );
       setShowCreateChallengeModal(false);
-      setAiChallengeForm({ subjectId: stats.assignedSubjects?.[0]?.split(":")?.[0] || "mat_1", topicName: "", idea: "" });
+      setAiChallengeForm({
+        subjectId: stats.assignedSubjects?.[0]?.split(":")?.[0] || "mat_1",
+        topicName: "",
+        idea: "",
+      });
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || "Error al conectar con la API de IA.");
@@ -477,20 +564,34 @@ export default function App() {
   };
 
   const handleSaveManualChallenge = () => {
-    const { subjectId, group, topicName, title, description, instructions, difficulty, type, quizOptions, quizAnswer, evidenceRequired } = manualChallengeForm;
+    const {
+      subjectId,
+      group,
+      topicName,
+      title,
+      description,
+      instructions,
+      difficulty,
+      type,
+      quizOptions,
+      quizAnswer,
+      evidenceRequired,
+    } = manualChallengeForm;
 
     if (!subjectId || !topicName || !title || !description || !instructions) {
-      toast.error("Por favor completa todos los campos requeridos para el desafío.");
+      toast.error(
+        "Por favor completa todos los campos requeridos para el desafío.",
+      );
       return;
     }
 
-    if (type === "Quiz" && quizOptions.some(o => !o.trim())) {
+    if (type === "Quiz" && quizOptions.some((o) => !o.trim())) {
       toast.error("Por favor escribe las 4 opciones para el Quiz.");
       return;
     }
 
     // Automatically detect grade from chosen subject
-    const selectedSub = getSubjectListHelper().find(s => s.id === subjectId);
+    const selectedSub = getSubjectListHelper().find((s) => s.id === subjectId);
     const resolvedGrade = selectedSub ? selectedSub.grade : "1";
 
     const customId = `custom_task_manual_${Date.now()}`;
@@ -508,17 +609,19 @@ export default function App() {
       isAIQuiz: type === "Quiz",
       reward: {
         tokens: difficulty === "Easy" ? 25 : difficulty === "Medium" ? 50 : 150,
-        pack: difficulty === "Hard"
+        pack: difficulty === "Hard",
       },
       evidenceRequired: type === "Exercise" ? evidenceRequired : false,
       subjectId,
       gradeGroup: targetGradeGroup,
       topicName,
-      topicId: `t_custom_${subjectId}_${topicName.trim().replace(/\s+/g, '_').toLowerCase()}`
+      topicId: `t_custom_${subjectId}_${topicName.trim().replace(/\s+/g, "_").toLowerCase()}`,
     };
 
     addCustomTask(newchallenge);
-    toast.success(`✅ Desafío "${title}" creado manualmente y asignado al grupo ${targetGradeGroup}!`);
+    toast.success(
+      `✅ Desafío "${title}" creado manualmente y asignado al grupo ${targetGradeGroup}!`,
+    );
     setShowCreateChallengeModal(false);
     setManualChallengeForm({
       subjectId: stats.assignedSubjects?.[0]?.split(":")?.[0] || "mat_1",
@@ -550,23 +653,30 @@ export default function App() {
   // Compute Enriched Academic Content
   const enrichedAcademicContent: Record<string, any[]> = (() => {
     // Deep clone static content
-    const content = JSON.parse(JSON.stringify(ACADEMIC_CONTENT)) as Record<string, any[]>;
+    const content = JSON.parse(JSON.stringify(ACADEMIC_CONTENT)) as Record<
+      string,
+      any[]
+    >;
 
     // Merge customTasks
-    customTasks.forEach(ct => {
-      const year = ct.gradeGroup ? ct.gradeGroup.charAt(0) : '1';
+    customTasks.forEach((ct) => {
+      const year = ct.gradeGroup ? ct.gradeGroup.charAt(0) : "1";
       if (!content[year]) return;
 
-      const subject = content[year].find(s => s.id === ct.subjectId);
+      const subject = content[year].find((s) => s.id === ct.subjectId);
       if (!subject) return;
 
       // Find or create topic
-      let topic = subject.topics.find((t: any) => t.name.toLowerCase() === ct.topicName.toLowerCase());
+      let topic = subject.topics.find(
+        (t: any) => t.name.toLowerCase() === ct.topicName.toLowerCase(),
+      );
       if (!topic) {
         topic = {
-          id: ct.topicId || `t_custom_${ct.subjectId}_${ct.topicName.replace(/\s+/g, '_').toLowerCase()}`,
+          id:
+            ct.topicId ||
+            `t_custom_${ct.subjectId}_${ct.topicName.replace(/\s+/g, "_").toLowerCase()}`,
           name: ct.topicName,
-          tasks: []
+          tasks: [],
         };
         subject.topics.push(topic);
       }
@@ -584,7 +694,7 @@ export default function App() {
           quizAnswer: ct.quizAnswer !== undefined ? ct.quizAnswer : -1,
           isAIQuiz: ct.isAIQuiz || false,
           reward: ct.reward || { tokens: 50 },
-          evidenceRequired: ct.evidenceRequired || false
+          evidenceRequired: ct.evidenceRequired || false,
         });
       }
     });
@@ -592,7 +702,10 @@ export default function App() {
     return content;
   })();
 
-  const [selectedReviewItem, setSelectedReviewItem] = useState<{ studentId: string; taskId: string } | null>(null);
+  const [selectedReviewItem, setSelectedReviewItem] = useState<{
+    studentId: string;
+    taskId: string;
+  } | null>(null);
   const [teacherFeedbackComment, setTeacherFeedbackComment] = useState("");
 
   const [activeTab, setActiveTab] = useState<
@@ -609,7 +722,9 @@ export default function App() {
   // Select first student automatically when a group is selected
   useEffect(() => {
     if (selectedTeacherGroup) {
-      const studentsInGroup = globalStudents.filter(s => s.grade === selectedTeacherGroup);
+      const studentsInGroup = globalStudents.filter(
+        (s) => s.grade === selectedTeacherGroup,
+      );
       if (studentsInGroup.length > 0) {
         setActiveGroupStudentId(studentsInGroup[0].id);
       } else {
@@ -633,7 +748,7 @@ export default function App() {
                 return {
                   task: found,
                   subject: sub,
-                  topicName: topic.name
+                  topicName: topic.name,
                 };
               }
             }
@@ -646,22 +761,30 @@ export default function App() {
 
   // Directly approve a student's pending activity from the group's detailed screen
   const handleDirectApprove = async (studentId: string, taskId: string) => {
-    const targetUserStats = rawStudents.find(u => u.id === studentId);
+    const targetUserStats = rawStudents.find((u) => u.id === studentId);
     if (!targetUserStats) {
       toast.error("No se encontró el alumno original.");
       return;
     }
-    
+
     const taskDetails = lookupTaskDetails(taskId)?.task;
 
     const updatedStats = { ...targetUserStats };
-    updatedStats.pendingTasks = updatedStats.pendingTasks?.filter(id => id !== taskId);
-    updatedStats.completedTasks = [...(updatedStats.completedTasks || []), taskId];
-    
+    updatedStats.pendingTasks = updatedStats.pendingTasks?.filter(
+      (id) => id !== taskId,
+    );
+    updatedStats.completedTasks = [
+      ...(updatedStats.completedTasks || []),
+      taskId,
+    ];
+
     if (taskDetails?.reward.tokens) {
       updatedStats.tokens += taskDetails.reward.tokens;
     }
-    if (taskDetails?.reward.cardId && !updatedStats.collection.includes(taskDetails.reward.cardId)) {
+    if (
+      taskDetails?.reward.cardId &&
+      !updatedStats.collection.includes(taskDetails.reward.cardId)
+    ) {
       updatedStats.collection.push(taskDetails.reward.cardId);
     }
 
@@ -669,13 +792,15 @@ export default function App() {
       await supabaseService.updateUserStats(targetUserStats.id!, updatedStats);
       await supabaseService.sendNotification(
         targetUserStats.id!,
-        'Tarea Aprobada',
-        `Tu tarea "${taskDetails?.title}" ha sido aprobada. ${groupDirectFeedback ? 'Retroalimentación: ' + groupDirectFeedback : '¡Recibiste tus recompensas!'}`,
-        'success'
+        "Tarea Aprobada",
+        `Tu tarea "${taskDetails?.title}" ha sido aprobada. ${groupDirectFeedback ? "Retroalimentación: " + groupDirectFeedback : "¡Recibiste tus recompensas!"}`,
+        "success",
       );
       await loadUsers();
       setGroupDirectFeedback("");
-      toast.success(`Actividad "${taskDetails?.title || 'Desafío'}" aprobada con éxito.`);
+      toast.success(
+        `Actividad "${taskDetails?.title || "Desafío"}" aprobada con éxito.`,
+      );
     } catch (err: any) {
       console.error("Error direct approval:", err);
       toast.error("Ocurrió un error al aprobar la actividad.");
@@ -683,14 +808,19 @@ export default function App() {
   };
 
   // Enviar mensaje motivacional o reconocimiento con fichas extra
-  const handleSendEncouragement = async (studentId: string, customMessage?: string) => {
-    const targetUserStats = rawStudents.find(u => u.id === studentId);
+  const handleSendEncouragement = async (
+    studentId: string,
+    customMessage?: string,
+  ) => {
+    const targetUserStats = rawStudents.find((u) => u.id === studentId);
     if (!targetUserStats) {
       toast.error("No se encontró el alumno original.");
       return;
     }
-    const messageToSend = customMessage || "¡Sigue así! Tu profesor reconoce tu dedicación y gran desempeño en clase. 🚀";
-    
+    const messageToSend =
+      customMessage ||
+      "¡Sigue así! Tu profesor reconoce tu dedicación y gran desempeño en clase. 🚀";
+
     const updatedStats = { ...targetUserStats };
     updatedStats.tokens = (updatedStats.tokens || 0) + 10;
 
@@ -698,13 +828,15 @@ export default function App() {
       await supabaseService.updateUserStats(targetUserStats.id!, updatedStats);
       await supabaseService.sendNotification(
         targetUserStats.id!,
-        '🎓 Reconocimiento del Profesor',
+        "🎓 Reconocimiento del Profesor",
         `${messageToSend} (+10 🪙 de regalo de motivación)`,
-        'success'
+        "success",
       );
       playCoinSound();
       await loadUsers();
-      toast.success(`¡Mensaje enviado a ${targetUserStats.username || "el alumno"}! Recibió +10🪙.`);
+      toast.success(
+        `¡Mensaje enviado a ${targetUserStats.username || "el alumno"}! Recibió +10🪙.`,
+      );
     } catch (err: any) {
       console.error("Error sending motivation:", err);
       toast.error("Error al enviar motivación.");
@@ -717,7 +849,7 @@ export default function App() {
       const key = await supabaseService.getGlobalMasterKey();
       if (key) {
         setMasterTeacherKey(key);
-        localStorage.setItem('masterTeacherKey', key);
+        localStorage.setItem("masterTeacherKey", key);
       }
     };
     fetchGlobalConfig();
@@ -725,8 +857,25 @@ export default function App() {
 
   // NEW admin state
   const [rawStudents, setRawStudents] = useState<UserStats[]>([]);
+
+  const pendingAvatarsCount = React.useMemo(() => {
+    return rawStudents.filter((s) => {
+      const meta = (s.packCurrencies as any)?._avatar_meta;
+      return meta?.status === "pending" && meta?.pendingUrl;
+    }).length;
+  }, [rawStudents]);
+
+  const pendingTasksCount = React.useMemo(() => {
+    return rawStudents.reduce(
+      (acc, curr) => acc + (curr.pendingTasks?.length || 0),
+      0,
+    );
+  }, [rawStudents]);
+
+  const totalPendingsCount = pendingAvatarsCount + pendingTasksCount;
+
   const [masterTeacherKey, setMasterTeacherKey] = useState(() => {
-    return localStorage.getItem('masterTeacherKey') || "DOCENTE-2026";
+    return localStorage.getItem("masterTeacherKey") || "DOCENTE-2026";
   });
   const [showMasterKeyInProfile, setShowMasterKeyInProfile] = useState(false);
   const [isEditingMasterKey, setIsEditingMasterKey] = useState(false);
@@ -734,40 +883,56 @@ export default function App() {
 
   // Persistence for master key
   useEffect(() => {
-    localStorage.setItem('masterTeacherKey', masterTeacherKey);
+    localStorage.setItem("masterTeacherKey", masterTeacherKey);
     setTempMasterKey(masterTeacherKey);
   }, [masterTeacherKey]);
 
   const loadUsers = React.useCallback(async () => {
     try {
       const users = await supabaseService.fetchAllUsers();
-      
-      setRawStudents(users.filter(u => u.role === 'Student'));
 
-      const computeStudents: Student[] = users.filter(u => u.role === 'Student').map(s => ({
-          id: s.id || s.username || '',
-          name: s.username || 'Alumno',
-          username: s.username || 'Alumno',
-          grade: s.grade || '2A',
-          collection: s.collection || [],
-          completedTasks: s.completedTasks || [],
-          pendingTasks: s.pendingTasks || [],
-          streak: s.streak || 0,
-          tokens: s.tokens || 0,
-          lastActive: s.lastActive,
-          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${s.username}`
-      }));
+      setRawStudents(users.filter((u) => u.role === "Student"));
+
+      const computeStudents: Student[] = users
+        .filter((u) => u.role === "Student")
+        .map((s) => {
+          const meta = (s.packCurrencies as any)?._avatar_meta;
+          const finalAvatar =
+            meta?.status === "approved" && meta?.approvedUrl
+              ? meta.approvedUrl
+              : `https://api.dicebear.com/7.x/avataaars/svg?seed=${s.username}`;
+          return {
+            id: s.id || s.username || "",
+            name: s.username || "Alumno",
+            username: s.username || "Alumno",
+            grade: s.grade || "2A",
+            collection: s.collection || [],
+            completedTasks: s.completedTasks || [],
+            pendingTasks: s.pendingTasks || [],
+            streak: s.streak || 0,
+            tokens: s.tokens || 0,
+            lastActive: s.lastActive,
+            avatar: finalAvatar,
+            packCurrencies: s.packCurrencies,
+          };
+        });
       setGlobalStudents(computeStudents);
 
-      const computeTeachers: TeacherModel[] = users.filter(u => u.role === 'Teacher').map(t => ({
-          id: t.id || t.username || '',
-          name: t.username || 'Profesor',
+      const computeTeachers: TeacherModel[] = users
+        .filter((u) => u.role === "Teacher")
+        .map((t) => ({
+          id: t.id || t.username || "",
+          name: t.username || "Profesor",
           subjects: t.assignedSubjects || [],
           groups: t.assignedGroups || [],
-          students: users.filter(u => u.role === 'Student' && (t.assignedGroups || []).includes(u.grade)).length,
-          status: 'Active',
-          lastActive: t.lastActive
-      }));
+          students: users.filter(
+            (u) =>
+              u.role === "Student" &&
+              (t.assignedGroups || []).includes(u.grade),
+          ).length,
+          status: "Active",
+          lastActive: t.lastActive,
+        }));
 
       setTeachers(computeTeachers);
     } catch (e) {
@@ -777,16 +942,19 @@ export default function App() {
 
   useEffect(() => {
     // Solo cargar usuarios si está autenticado y tiene permisos
-    if (isAuthenticated && (stats.role === 'Admin' || stats.role === 'Teacher')) {
+    if (
+      isAuthenticated &&
+      (stats.role === "Admin" || stats.role === "Teacher")
+    ) {
       loadUsers();
     }
   }, [loadUsers, adminDashboardTab, isAuthenticated, stats.role]);
 
   const allStudents = React.useMemo(() => {
-      const map = new Map<string, Student>();
-      // Always include current real students from Supabase
-      globalStudents.forEach(s => map.set(s.id, s));
-      return Array.from(map.values());
+    const map = new Map<string, Student>();
+    // Always include current real students from Supabase
+    globalStudents.forEach((s) => map.set(s.id, s));
+    return Array.from(map.values());
   }, [globalStudents, currentUser, stats.username]);
 
   const [selectedAdminCard, setSelectedAdminCard] = useState<CardType | null>(
@@ -806,27 +974,31 @@ export default function App() {
   const [currentChallenge, setCurrentChallenge] = useState(INITIAL_CHALLENGE);
   const [hasCompletedDaily, setHasCompletedDaily] = useState(false);
   const [isGeneratingChallenge, setIsGeneratingChallenge] = useState(false);
-  const [sessionCompletedChallenges, setSessionCompletedChallenges] = useState<Set<string>>(new Set());
+  const [sessionCompletedChallenges, setSessionCompletedChallenges] = useState<
+    Set<string>
+  >(new Set());
   const [animatingCards, setAnimatingCards] = useState<string[]>([]);
   const [dbCards, setDbCards] = useState<CardType[]>([]);
 
   // Fetch all cards from database
   useEffect(() => {
     const fetchCards = async () => {
-      const { data, error } = await supabase.from('cards').select('*');
+      const { data, error } = await supabase.from("cards").select("*");
       if (error) {
         console.error("Error fetching cards from DB:", error);
         return;
       }
       if (data && data.length > 0) {
-        const mappedCards: CardType[] = data.map(c => ({
+        const mappedCards: CardType[] = data.map((c) => ({
           id: c.id,
           name: c.name,
           rarity: c.rarity as any,
           sourcePackId: c.pack_type,
           description: c.description || "",
-          imageUrl: c.image_url || `https://api.dicebear.com/7.x/identicon/svg?seed=${c.id}`,
-          category: (c.category as any) || 'Collectible'
+          imageUrl:
+            c.image_url ||
+            `https://api.dicebear.com/7.x/identicon/svg?seed=${c.id}`,
+          category: (c.category as any) || "Collectible",
         }));
         setDbCards(mappedCards);
       }
@@ -837,46 +1009,50 @@ export default function App() {
   // Compute total cards (DB + Constants as fallback)
   const allAvailableCards = React.useMemo(() => {
     const cardMap = new Map<string, CardType>();
-    INITIAL_CARDS.forEach(c => cardMap.set(c.id, c));
-    dbCards.forEach(c => cardMap.set(c.id, c));
+    INITIAL_CARDS.forEach((c) => cardMap.set(c.id, c));
+    dbCards.forEach((c) => cardMap.set(c.id, c));
     return Array.from(cardMap.values());
   }, [dbCards]);
 
   const generateDailyChallenge = async () => {
     setIsGeneratingChallenge(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: `Genera una pregunta de trivia de cultura general de opción múltiple muy interesante en español, con un ligero enfoque hacia México pero sin dejar de lado el ámbito internacional. Debe tener 4 opciones (strings).
-        La respuesta debe ser en formato JSON con la siguiente estructura: 
-        { "question": "texto de la pregunta", "options": ["opcion1", "opcion2", "opcion3", "opcion4"], "answer": 0 }
-        La propiedad "answer" debe ser el índice de la respuesta correcta (0-3).`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              question: { type: Type.STRING },
-              options: { type: Type.ARRAY, items: { type: Type.STRING } },
-              answer: { type: Type.INTEGER },
-            },
-            required: ["question", "options", "answer"],
-          },
+      const response = await fetch("/api/challenges/generate-daily", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
       });
-      const data = JSON.parse(response.text);
-      setCurrentChallenge({
-        id: `daily_${Date.now()}`,
-        subject: "Cultura General",
-        question: data.question,
-        options: data.options,
-        correctAnswer: data.answer,
-        difficulty: 'Medium',
-        tokenReward: hasCompletedDaily ? 0 : 25,
-      });
+      if (!response.ok) {
+        throw new Error("Error al consultar el desafío diario al servidor");
+      }
+      const result = await response.json();
+      if (result.success && result.challenge) {
+        const data = result.challenge;
+        setCurrentChallenge({
+          id: `daily_${Date.now()}`,
+          subject: "Cultura General",
+          question: data.question,
+          options: data.options,
+          correctAnswer: data.answer,
+          difficulty: "Medium",
+          tokenReward: hasCompletedDaily ? 0 : 25,
+        });
+      } else {
+        throw new Error(result.error || "Respuesta inválida del servidor");
+      }
     } catch (e) {
       console.error("Error generating daily challenge:", e);
+      // Fallback amigable si falla la IA o la conexión
+      setCurrentChallenge({
+        id: `daily_fallback_${Date.now()}`,
+        subject: "Cultura General",
+        question: "¿Qué color se obtiene al mezclar pintura de color azul con amarillo?",
+        options: ["Rojo", "Verde", "Morado", "Naranja"],
+        correctAnswer: 1,
+        difficulty: "Easy",
+        tokenReward: hasCompletedDaily ? 0 : 25,
+      });
     } finally {
       setIsGeneratingChallenge(false);
     }
@@ -884,7 +1060,7 @@ export default function App() {
 
   useEffect(() => {
     if (isAuthenticated && stats.role === "Student") {
-      if (currentChallenge.id === 'daily_1') {
+      if (currentChallenge.id === "daily_1") {
         generateDailyChallenge();
       }
     }
@@ -940,46 +1116,47 @@ export default function App() {
   const generateAIQuiz = async (subjectName: string, topicName: string) => {
     setIsGeneratingQuiz(true);
     setAiQuiz(null);
- 
-    if (!process.env.GEMINI_API_KEY) {
-      console.warn("GEMINI_API_KEY is not defined in process.env");
-    }
- 
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
-      const isEnglish = subjectName.toLowerCase().includes("inglés") || subjectName.toLowerCase().includes("english");
-      const subPrompt = isEnglish
-        ? `Genera una pregunta de opción múltiple sobre la materia "${subjectName}" y el tema "${topicName}" para grado de secundaria ${stats.grade}. Como es examen de Inglés, la pregunta en sí y las 4 opciones deben estar en inglés, pero las instrucciones iniciales o contexto explicativo opcional integrado deben estar explicados en español.`
-        : `Genera una pregunta de opción múltiple para un estudiante de secundaría grado ${stats.grade} sobre la materia "${subjectName}" y el tema "${topicName}". Debe estar completamente en español.`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: `${subPrompt}
-        La respuesta debe ser en formato JSON con la siguiente estructura: 
-        { "question": "texto de la pregunta", "options": ["opcion1", "opcion2", "opcion3", "opcion4"], "answer": 0 }
-        La propiedad "answer" debe ser el índice de la respuesta correcta (0-3).`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              question: { type: Type.STRING },
-              options: { type: Type.ARRAY, items: { type: Type.STRING } },
-              answer: { type: Type.INTEGER },
-            },
-            required: ["question", "options", "answer"],
-          },
+    try {
+      const response = await fetch("/api/challenges/generate-quiz", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
+        body: JSON.stringify({
+          subjectName,
+          topicName,
+          grade: stats.grade || "1",
+        }),
       });
 
-      const data = JSON.parse(response.text);
-      setAiQuiz(data);
+      if (!response.ok) {
+        throw new Error("Error al consultar el quiz con IA al servidor");
+      }
+
+      const result = await response.json();
+      if (result.success && result.quiz) {
+        setAiQuiz(result.quiz);
+      } else {
+        throw new Error(result.error || "Respuesta de quiz inválida");
+      }
     } catch (error: any) {
       console.error("Error generating quiz:", error);
-      const errorMessage = error?.message || "Error desconocido";
+      const errorMessage = error?.message || "Error de red o servidor";
       toast.error(
-        `Hubo un error al generar el quiz con IA: ${errorMessage}. Por favor intenta de nuevo.`,
+        `Hubo un problema al generar el quiz con la IA: ${errorMessage}. Cargando una pregunta de respaldo...`,
       );
+      // Fallback amigable adaptado para la materia actual
+      setAiQuiz({
+        question: `Pregunta de repaso de ${subjectName} sobre el tema "${topicName}": ¿Cuál de las siguientes palabras describe la idea de aprender sobre este tema?`,
+        options: [
+          "Una idea importante para conocer nuestro mundo",
+          "Algo que no tiene relación",
+          "Un concepto muy misterioso",
+          "Una palabra al azar"
+        ],
+        answer: 0
+      });
     } finally {
       setIsGeneratingQuiz(false);
     }
@@ -988,16 +1165,21 @@ export default function App() {
   // Load from Supabase or local storage on mount
   useEffect(() => {
     const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (session?.user) {
         try {
-          const fetchedStats = await supabaseService.getProfile(session.user.id, session.user.user_metadata);
+          const fetchedStats = await supabaseService.getProfile(
+            session.user.id,
+            session.user.user_metadata,
+          );
           setStats(fetchedStats);
           setCurrentUserId(session.user.id);
-          setCurrentUser(fetchedStats.username || 'Usuario');
+          setCurrentUser(fetchedStats.username || "Usuario");
           setIsAuthenticated(true);
         } catch (e: any) {
-          if (e.message === 'Tu perfil de usuario no fue encontrado.') {
+          if (e.message === "Tu perfil de usuario no fue encontrado.") {
             // Silently clean up orphan session
             await handleLogout();
           } else {
@@ -1012,7 +1194,10 @@ export default function App() {
           if (saved) {
             const parsedStats: UserStats = JSON.parse(saved);
             const today = new Date().toDateString();
-            if (!parsedStats.dailyLimits || parsedStats.dailyLimits.lastResetDate !== today) {
+            if (
+              !parsedStats.dailyLimits ||
+              parsedStats.dailyLimits.lastResetDate !== today
+            ) {
               parsedStats.dailyLimits = {
                 lastResetDate: today,
                 easyCompleted: 0,
@@ -1026,7 +1211,7 @@ export default function App() {
         const authStatus = localStorage.getItem("cardacademy_is_authenticated");
         if (authStatus === "true") setIsAuthenticated(true);
       }
-      
+
       const completed = localStorage.getItem("cardacademy_challenge_completed");
       if (completed === new Date().toDateString()) setHasCompletedDaily(true);
     };
@@ -1037,18 +1222,28 @@ export default function App() {
   useEffect(() => {
     if (currentUserId && stats.username) {
       // Sync with Supabase (fire and forget for now, but in production consider debouncing)
-      supabaseService.updateUserStats(currentUserId, stats).catch(console.error);
+      supabaseService
+        .updateUserStats(currentUserId, stats)
+        .catch(console.error);
     }
     if (currentUser) {
-      localStorage.setItem(`cardacademy_stats_${currentUser}`, JSON.stringify(stats));
+      localStorage.setItem(
+        `cardacademy_stats_${currentUser}`,
+        JSON.stringify(stats),
+      );
     }
   }, [stats, currentUserId, currentUser]);
 
-  const handleLogin = (role: UserRole, username: string, grade?: string, initialStats?: UserStats) => {
-    const freshUser = username || 'Alumno';
+  const handleLogin = (
+    role: UserRole,
+    username: string,
+    grade?: string,
+    initialStats?: UserStats,
+  ) => {
+    const freshUser = username || "Alumno";
     setCurrentUser(freshUser);
     localStorage.setItem("cardacademy_current_user", freshUser);
-    
+
     if (initialStats) {
       setStats(initialStats);
       if (initialStats.id) setCurrentUserId(initialStats.id);
@@ -1068,7 +1263,7 @@ export default function App() {
             pack_jacobo: 0,
             pack_culiacan: 0,
             pack_six_seven: 0,
-          }
+          },
         };
 
         setStats({
@@ -1078,11 +1273,7 @@ export default function App() {
           username: freshUser,
           grade: (grade as any) || (role === "Student" ? "2A" : "2D"),
           assignedSubjects:
-            role === "Teacher"
-              ? []
-              : role === "Admin"
-                ? []
-                : ["math_2"],
+            role === "Teacher" ? [] : role === "Admin" ? [] : ["math_2"],
           assignedGroups:
             role === "Teacher"
               ? []
@@ -1092,7 +1283,7 @@ export default function App() {
         });
       }
     }
-    
+
     setIsAuthenticated(true);
     localStorage.setItem("cardacademy_is_authenticated", "true");
   };
@@ -1116,7 +1307,7 @@ export default function App() {
       }));
     }
     setHasCompletedDaily(true);
-    setSessionCompletedChallenges(prev => {
+    setSessionCompletedChallenges((prev) => {
       const next = new Set(prev);
       next.add(currentChallenge.id);
       return next;
@@ -1137,7 +1328,14 @@ export default function App() {
     newCards.forEach((c) => {
       if (collectionSet.has(c.id) || currentDrawnSet.has(c.id)) {
         duplicateCount++;
-        const points = c.rarity === 'Legendary' || c.rarity === 'Secret' ? 200 : c.rarity === 'Epic' ? 50 : c.rarity === 'Rare' ? 15 : 5;
+        const points =
+          c.rarity === "Legendary" || c.rarity === "Secret"
+            ? 200
+            : c.rarity === "Epic"
+              ? 50
+              : c.rarity === "Rare"
+                ? 15
+                : 5;
         duplicatePoints += points;
       } else {
         trulyNewCardIds.push(c.id);
@@ -1147,11 +1345,14 @@ export default function App() {
 
     setStats((prev) => {
       const prevCollectionSet = new Set(prev.collection);
-      currentDrawnSet.forEach(cId => prevCollectionSet.add(cId));
+      currentDrawnSet.forEach((cId) => prevCollectionSet.add(cId));
 
-      const newPackCurrencies = prev.packCurrencies ? { ...prev.packCurrencies } : { pack_jacobo: 0, pack_culiacan: 0, pack_six_seven: 0 };
+      const newPackCurrencies = prev.packCurrencies
+        ? { ...prev.packCurrencies }
+        : { pack_jacobo: 0, pack_culiacan: 0, pack_six_seven: 0 };
       if (duplicatePoints > 0) {
-        newPackCurrencies[packId] = (newPackCurrencies[packId] || 0) + duplicatePoints;
+        newPackCurrencies[packId] =
+          (newPackCurrencies[packId] || 0) + duplicatePoints;
       }
 
       return {
@@ -1160,9 +1361,11 @@ export default function App() {
         packCurrencies: newPackCurrencies,
       };
     });
-    
+
     if (duplicatePoints > 0) {
-      toast.info(`¡Obtuviste ${duplicateCount} carta(s) repetida(s)! Ganaste ${duplicatePoints} moneda(s) para la tienda.`);
+      toast.info(
+        `¡Obtuviste ${duplicateCount} carta(s) repetida(s)! Ganaste ${duplicatePoints} moneda(s) para la tienda.`,
+      );
     }
 
     setAnimatingCards(trulyNewCardIds);
@@ -1200,9 +1403,11 @@ export default function App() {
 
       // Update Daily Limits
       if (newStats.dailyLimits) {
-        if (task.difficulty === 'Easy') newStats.dailyLimits.easyCompleted++;
-        else if (task.difficulty === 'Medium') newStats.dailyLimits.mediumCompleted++;
-        else if (task.difficulty === 'Hard') newStats.dailyLimits.hardCompleted++;
+        if (task.difficulty === "Easy") newStats.dailyLimits.easyCompleted++;
+        else if (task.difficulty === "Medium")
+          newStats.dailyLimits.mediumCompleted++;
+        else if (task.difficulty === "Hard")
+          newStats.dailyLimits.hardCompleted++;
       }
 
       // If pack rewarded
@@ -1224,7 +1429,10 @@ export default function App() {
       if (!newStats.pendingTasks) {
         newStats.pendingTasks = [];
       }
-      if (!newStats.pendingTasks.includes(task.id) && !newStats.completedTasks.includes(task.id)) {
+      if (
+        !newStats.pendingTasks.includes(task.id) &&
+        !newStats.completedTasks.includes(task.id)
+      ) {
         newStats.pendingTasks = [...newStats.pendingTasks, task.id];
       }
       return newStats;
@@ -1246,9 +1454,9 @@ export default function App() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
-            <LoginPage 
-              onLogin={handleLogin} 
-              masterTeacherKey={masterTeacherKey} 
+            <LoginPage
+              onLogin={handleLogin}
+              masterTeacherKey={masterTeacherKey}
               schoolGroups={SCHOOL_GROUPS}
             />
           </motion.div>
@@ -1328,11 +1536,17 @@ export default function App() {
                   {stats.role === "Student" && (
                     <div className="flex md:hidden items-center gap-1 sm:gap-3 shrink min-w-0">
                       <div className="flex items-center gap-1 sm:gap-2 bg-slate-800/80 px-1.5 py-1 rounded-full border border-slate-700 shrink min-w-0">
-                        <AnimatedTokens tokens={stats.tokens} className="text-amber-400 font-bold text-xs" />
+                        <AnimatedTokens
+                          tokens={stats.tokens}
+                          className="text-amber-400 font-bold text-xs"
+                        />
                         <Coins className="text-amber-500 shrink-0" size={12} />
                       </div>
                       <div className="flex items-center gap-1 sm:gap-2 bg-gradient-to-r from-orange-500/10 to-rose-500/10 px-1.5 py-1 rounded-full border border-rose-500/30 shadow-lg shrink min-w-0">
-                        <Flame className="text-rose-500 animate-pulse  shrink-0" size={14} />
+                        <Flame
+                          className="text-rose-500 animate-pulse  shrink-0"
+                          size={14}
+                        />
                         <span className="text-rose-400 font-black font-mono text-xs tracking-tighter drop-shadow-md truncate">
                           {stats.streak}
                         </span>
@@ -1343,18 +1557,26 @@ export default function App() {
                   {stats.role === "Teacher" && (
                     <div className="flex md:hidden items-center gap-1 sm:gap-3 shrink min-w-0">
                       <div className="flex items-center gap-1.5 bg-indigo-500/10 px-2 py-1 rounded-full border border-indigo-500/30 shrink min-w-0 shadow-lg">
-                        <span className="text-[10px] uppercase text-cyan-400 font-black tracking-widest hidden sm:inline-block">Alumnos</span>
-                        <span className="text-[10px] uppercase text-cyan-400 font-black tracking-widest sm:hidden">Alum.</span>
+                        <span className="text-[10px] uppercase text-cyan-400 font-black tracking-widest hidden sm:inline-block">
+                          Alumnos
+                        </span>
+                        <span className="text-[10px] uppercase text-cyan-400 font-black tracking-widest sm:hidden">
+                          Alum.
+                        </span>
                         <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-lg"></div>
                         <span className="text-indigo-400 font-black font-mono text-xs tracking-tighter truncate">
-                          {globalStudents.filter(s => {
-                            const isAssigned = stats.assignedGroups.includes(s.grade);
-                            if (!isAssigned) return false;
-                            if (!s.lastActive) return false;
-                            const lastSeen = new Date(s.lastActive).getTime();
-                            const now = Date.now();
-                            return (now - lastSeen) < 300000; // 5 minutes
-                          }).length}
+                          {
+                            globalStudents.filter((s) => {
+                              const isAssigned = stats.assignedGroups.includes(
+                                s.grade,
+                              );
+                              if (!isAssigned) return false;
+                              if (!s.lastActive) return false;
+                              const lastSeen = new Date(s.lastActive).getTime();
+                              const now = Date.now();
+                              return now - lastSeen < 300000; // 5 minutes
+                            }).length
+                          }
                         </span>
                       </div>
                     </div>
@@ -1366,13 +1588,19 @@ export default function App() {
                   {stats.role === "Student" && (
                     <div className="hidden md:flex items-center gap-3 shrink min-w-0">
                       <div className="flex items-center gap-2 bg-slate-800/80 px-4 py-1.5 rounded-full border border-slate-700 shrink min-w-0">
-                        <AnimatedTokens tokens={stats.tokens} className="text-amber-400 font-bold text-sm" />
+                        <AnimatedTokens
+                          tokens={stats.tokens}
+                          className="text-amber-400 font-bold text-sm"
+                        />
                         <span className="text-[10px] uppercase text-slate-400 font-bold tracking-tight">
                           Medallas
                         </span>
                       </div>
                       <div className="flex items-center gap-2.5 bg-gradient-to-r from-orange-500/10 to-rose-500/10 px-4 py-1.5 rounded-full border border-rose-500/30 shadow-lg shrink min-w-0">
-                        <Flame className="text-rose-500 animate-pulse  shrink-0" size={14} />
+                        <Flame
+                          className="text-rose-500 animate-pulse  shrink-0"
+                          size={14}
+                        />
                         <span className="text-rose-400 font-black font-mono text-base tracking-tighter drop-shadow-md truncate">
                           {stats.streak}
                         </span>
@@ -1391,14 +1619,18 @@ export default function App() {
                         </span>
                         <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-lg"></div>
                         <span className="text-indigo-400 font-black font-mono text-base tracking-tighter truncate">
-                          {globalStudents.filter(s => {
-                            const isAssigned = stats.assignedGroups.includes(s.grade);
-                            if (!isAssigned) return false;
-                            if (!s.lastActive) return false;
-                            const lastSeen = new Date(s.lastActive).getTime();
-                            const now = Date.now();
-                            return (now - lastSeen) < 300000; // 5 minutes
-                          }).length}
+                          {
+                            globalStudents.filter((s) => {
+                              const isAssigned = stats.assignedGroups.includes(
+                                s.grade,
+                              );
+                              if (!isAssigned) return false;
+                              if (!s.lastActive) return false;
+                              const lastSeen = new Date(s.lastActive).getTime();
+                              const now = Date.now();
+                              return now - lastSeen < 300000; // 5 minutes
+                            }).length
+                          }
                         </span>
                       </div>
                     </div>
@@ -1413,7 +1645,7 @@ export default function App() {
                       className="relative p-2 text-slate-400 hover:text-white transition-colors rounded-full hover:bg-slate-800"
                     >
                       <Bell size={20} />
-                      {notifications.filter(n => !n.isRead).length > 0 && (
+                      {notifications.filter((n) => !n.isRead).length > 0 && (
                         <span className="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full animate-pulse" />
                       )}
                     </button>
@@ -1439,60 +1671,81 @@ export default function App() {
                                 ? "border-amber-500/50 shadow-amber-500/20"
                                 : stats.role === "Teacher"
                                   ? "border-indigo-500/50 shadow-indigo-500/20"
-                                  : "border-emerald-500/50 shadow-emerald-500/20"
+                                  : "border-emerald-500/50 shadow-emerald-500/20",
                             )}
                           >
                             <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-800/40">
                               <h3 className="font-black text-slate-100 uppercase tracking-widest text-[10px]">
                                 Notificaciones
                               </h3>
-                              {notifications.filter(n => !n.isRead).length > 0 && (
+                              {notifications.filter((n) => !n.isRead).length >
+                                0 && (
                                 <span className="bg-rose-500 text-white px-2 py-0.5 rounded-full text-[8px] font-black tracking-widest">
-                                  {notifications.filter(n => !n.isRead).length} NUEVAS
+                                  {
+                                    notifications.filter((n) => !n.isRead)
+                                      .length
+                                  }{" "}
+                                  NUEVAS
                                 </span>
                               )}
                             </div>
                             <div className="max-h-[60vh] overflow-y-auto transform-gpu no-scrollbar bg-slate-900 min-h-[100px]">
                               {notifications.length === 0 ? (
                                 <div className="p-8 text-center">
-                                  <Bell size={32} className="mx-auto text-slate-700 mb-3 opacity-20" />
+                                  <Bell
+                                    size={32}
+                                    className="mx-auto text-slate-700 mb-3 opacity-20"
+                                  />
                                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
                                     No tienes notificaciones
                                   </p>
                                 </div>
                               ) : (
                                 notifications.map((n) => (
-                                  <div 
-                                    key={n.id} 
+                                  <div
+                                    key={n.id}
                                     onClick={async () => {
                                       if (!n.isRead) {
                                         try {
-                                          await supabaseService.markNotificationAsRead(n.id);
+                                          await supabaseService.markNotificationAsRead(
+                                            n.id,
+                                          );
                                           loadNotifications();
                                         } catch (e) {
-                                          console.error("Error marking as read:", e);
+                                          console.error(
+                                            "Error marking as read:",
+                                            e,
+                                          );
                                         }
                                       }
                                     }}
                                     className={cn(
                                       "p-4 border-b border-slate-800/50 hover:bg-slate-800 transition-colors cursor-pointer group relative overflow-hidden",
-                                      !n.isRead && "bg-indigo-500/5"
+                                      !n.isRead && "bg-indigo-500/5",
                                     )}
                                   >
                                     {!n.isRead && (
                                       <div className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-500" />
                                     )}
                                     <div className="flex justify-between items-start mb-1">
-                                      <p className={cn(
-                                        "text-[9px] font-black uppercase tracking-widest",
-                                        n.type === 'success' ? "text-emerald-400" :
-                                        n.type === 'warning' ? "text-amber-400" :
-                                        n.type === 'error' ? "text-rose-400" : "text-indigo-400"
-                                      )}>
+                                      <p
+                                        className={cn(
+                                          "text-[9px] font-black uppercase tracking-widest",
+                                          n.type === "success"
+                                            ? "text-emerald-400"
+                                            : n.type === "warning"
+                                              ? "text-amber-400"
+                                              : n.type === "error"
+                                                ? "text-rose-400"
+                                                : "text-indigo-400",
+                                        )}
+                                      >
                                         [{n.title.toUpperCase()}]
                                       </p>
                                       <span className="text-[8px] text-slate-500 font-black uppercase tracking-widest group-hover:text-slate-400">
-                                        {new Date(n.createdAt).toLocaleDateString()}
+                                        {new Date(
+                                          n.createdAt,
+                                        ).toLocaleDateString()}
                                       </span>
                                     </div>
                                     <p className="text-xs text-slate-300 font-medium leading-relaxed">
@@ -1502,10 +1755,12 @@ export default function App() {
                                 ))
                               )}
                               <div className="p-3 text-center bg-slate-900 sticky bottom-0 border-t border-slate-800">
-                                <button 
+                                <button
                                   onClick={async () => {
                                     if (currentUserId) {
-                                      await supabaseService.markAllNotificationsAsRead(currentUserId);
+                                      await supabaseService.markAllNotificationsAsRead(
+                                        currentUserId,
+                                      );
                                       loadNotifications();
                                     }
                                   }}
@@ -1515,7 +1770,7 @@ export default function App() {
                                 </button>
                               </div>
                             </div>
-                        </motion.div>
+                          </motion.div>
                         </>
                       )}
                     </AnimatePresence>
@@ -1537,21 +1792,36 @@ export default function App() {
                           : "hover:bg-slate-800/50",
                       )}
                     >
-                      <div className="shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-full overflow-hidden bg-slate-700">
-                        <div
-                          className={cn(
-                            "w-full h-full bg-gradient-to-tr transition-all",
-                            stats.role === "Admin"
-                              ? "from-amber-400 to-rose-600"
-                              : stats.role === "Teacher"
-                                ? "from-indigo-400 to-purple-600"
-                                : "from-emerald-400 to-cyan-600",
-                          )}
-                        >
-                          <div className="w-full h-full flex items-center justify-center text-white font-black text-xs uppercase">
-                            {stats.username ? stats.username.charAt(0) : stats.role.charAt(0)}
+                      <div className="shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-full overflow-hidden bg-slate-800 border border-slate-700/60 flex items-center justify-center">
+                        {(stats.packCurrencies as any)?._avatar_meta?.status ===
+                          "approved" &&
+                        (stats.packCurrencies as any)?._avatar_meta
+                          ?.approvedUrl ? (
+                          <img
+                            src={
+                              (stats.packCurrencies as any)._avatar_meta
+                                .approvedUrl
+                            }
+                            alt={stats.username}
+                            className="w-full h-full object-cover"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <div
+                            className={cn(
+                              "w-full h-full bg-gradient-to-tr transition-all flex items-center justify-center text-white font-black text-xs uppercase",
+                              stats.role === "Admin"
+                                ? "from-amber-400 to-rose-600"
+                                : stats.role === "Teacher"
+                                  ? "from-indigo-400 to-purple-600"
+                                  : "from-emerald-400 to-cyan-600",
+                            )}
+                          >
+                            {stats.username
+                              ? stats.username.charAt(0)
+                              : stats.role.charAt(0)}
                           </div>
-                        </div>
+                        )}
                       </div>
                       <ChevronDown
                         size={14}
@@ -1579,55 +1849,115 @@ export default function App() {
                             style={{ originX: 1, originY: 0 }}
                             className={cn(
                               "fixed top-[72px] inset-x-4 mx-auto w-auto max-w-[280px] sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-3 sm:w-64 sm:max-w-none bg-slate-900 border-2 rounded-3xl shadow-lg overflow-hidden z-50 p-2",
-                            stats.role === "Admin"
-                              ? "border-amber-500/50 shadow-amber-500/20"
-                              : stats.role === "Teacher"
-                                ? "border-indigo-500/50 shadow-indigo-500/20"
-                                : "border-emerald-500/50 shadow-emerald-500/20"
-                          )}
-                        >
-                          <div className="p-4 border-b border-slate-800 flex items-center gap-3">
-                            <div
-                              className={cn(
-                                "shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-white font-black uppercase",
-                                stats.role === "Admin"
-                                  ? "bg-amber-500"
-                                  : stats.role === "Teacher"
-                                    ? "bg-indigo-500"
-                                    : "bg-emerald-500",
-                              )}
-                            >
-                              {stats.username ? stats.username.charAt(0) : stats.role.charAt(0)}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <p className="font-bold text-slate-100 uppercase tracking-tight truncate">
-                                {stats.username}
-                              </p>
-                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mt-1">
-                                ID: #48292-X
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="p-2 space-y-1">
-                            <button className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-slate-400 hover:text-white hover:bg-slate-800 transition-all group">
-                              <UserCog
-                                size={18}
-                                className="group-hover:text-indigo-400"
-                              />
-                              <span className="text-xs font-black uppercase tracking-widest">
-                                Editar Perfil
-                              </span>
-                            </button>
-
-                            {stats.originalRole === "Admin" && (
-                              <div className="py-2 border-t border-slate-800 my-1">
-                                <p className="px-4 text-[8px] font-black text-slate-600 uppercase tracking-[0.2em] mb-2">
-                                  Simular Rol (Demo)
+                              stats.role === "Admin"
+                                ? "border-amber-500/50 shadow-amber-500/20"
+                                : stats.role === "Teacher"
+                                  ? "border-indigo-500/50 shadow-indigo-500/20"
+                                  : "border-emerald-500/50 shadow-emerald-500/20",
+                            )}
+                          >
+                            <div className="p-4 border-b border-slate-800 flex items-center gap-3">
+                              <div className="shrink-0 w-10 h-10 rounded-full overflow-hidden bg-slate-800 border border-slate-700/50 flex items-center justify-center">
+                                {(stats.packCurrencies as any)?._avatar_meta
+                                  ?.status === "approved" &&
+                                (stats.packCurrencies as any)?._avatar_meta
+                                  ?.approvedUrl ? (
+                                  <img
+                                    src={
+                                      (stats.packCurrencies as any)._avatar_meta
+                                        .approvedUrl
+                                    }
+                                    alt={stats.username}
+                                    className="w-full h-full object-cover"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                ) : (
+                                  <div
+                                    className={cn(
+                                      "w-full h-full flex items-center justify-center text-white font-black uppercase text-sm",
+                                      stats.role === "Admin"
+                                        ? "bg-amber-500"
+                                        : stats.role === "Teacher"
+                                          ? "bg-indigo-500"
+                                          : "bg-emerald-500",
+                                    )}
+                                  >
+                                    {stats.username
+                                      ? stats.username.charAt(0)
+                                      : stats.role.charAt(0)}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="font-bold text-slate-100 uppercase tracking-tight truncate">
+                                  {stats.username}
                                 </p>
-                                <div className="flex flex-col gap-1">
-                                  {(["Student", "Teacher", "Admin"] as const).map(
-                                    (r) => (
+                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mt-1">
+                                  ID: #48292-X
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="p-2 space-y-1">
+                              <button
+                                onClick={() => {
+                                  setIsProfileOpen(false);
+                                  setShowProfileModal(true);
+                                }}
+                                className="w-full flex items-center gap-3 px-4 py-2.5 rounded-2xl text-slate-400 hover:text-white hover:bg-slate-800 transition-all group"
+                              >
+                                <Camera
+                                  size={16}
+                                  className="group-hover:text-indigo-400 animate-pulse"
+                                />
+                                <span className="text-[10px] font-black uppercase tracking-widest">
+                                  Cambiar Foto
+                                </span>
+                              </button>
+
+                              <button
+                                onClick={() => {
+                                  setIsProfileOpen(false);
+                                  const newName = window.prompt(
+                                    "Ingresa nuevo nombre de usuario:",
+                                    stats.username,
+                                  );
+                                  if (newName?.trim()) {
+                                    const upperName = newName
+                                      .trim()
+                                      .toUpperCase();
+                                    setStats((s) => ({
+                                      ...s,
+                                      username: upperName,
+                                    }));
+                                    supabaseService.updateUserStats(stats.id, {
+                                      username: upperName,
+                                    });
+                                    toast.success(
+                                      "Nombre actualizado exitosamente.",
+                                    );
+                                  }
+                                }}
+                                className="w-full flex items-center gap-3 px-4 py-2.5 rounded-2xl text-slate-400 hover:text-white hover:bg-slate-800 transition-all group"
+                              >
+                                <Pencil
+                                  size={16}
+                                  className="group-hover:text-indigo-400"
+                                />
+                                <span className="text-[10px] font-black uppercase tracking-widest">
+                                  Cambiar Nombre
+                                </span>
+                              </button>
+
+                              {stats.originalRole === "Admin" && (
+                                <div className="py-2 border-t border-slate-800 my-1">
+                                  <p className="px-4 text-[8px] font-black text-slate-600 uppercase tracking-[0.2em] mb-2">
+                                    Simular Rol (Demo)
+                                  </p>
+                                  <div className="flex flex-col gap-1">
+                                    {(
+                                      ["Student", "Teacher", "Admin"] as const
+                                    ).map((r) => (
                                       <button
                                         key={r}
                                         onClick={() => {
@@ -1642,13 +1972,7 @@ export default function App() {
                                                   : ["math_2"],
                                             assignedGroups:
                                               r === "Teacher"
-                                                ? [
-                                                    "2D",
-                                                    "3A",
-                                                    "3B",
-                                                    "3C",
-                                                    "3D",
-                                                  ]
+                                                ? ["2D", "3A", "3B", "3C", "3D"]
                                                 : r === "Admin"
                                                   ? []
                                                   : ["2A"],
@@ -1671,23 +1995,22 @@ export default function App() {
                                           <CheckCircle2 size={12} />
                                         )}
                                       </button>
-                                    ),
-                                  )}
+                                    ))}
+                                  </div>
                                 </div>
-                              </div>
-                            )}
+                              )}
 
-                            <button
-                              onClick={handleLogout}
-                              className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-rose-500 hover:bg-rose-500/10 transition-all group"
-                            >
-                              <LogOut size={18} />
-                              <span className="text-xs font-black uppercase tracking-widest">
-                                Cerrar Sesión
-                              </span>
-                            </button>
-                          </div>
-                        </motion.div>
+                              <button
+                                onClick={handleLogout}
+                                className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-rose-500 hover:bg-rose-500/10 transition-all group"
+                              >
+                                <LogOut size={18} />
+                                <span className="text-xs font-black uppercase tracking-widest">
+                                  Cerrar Sesión
+                                </span>
+                              </button>
+                            </div>
+                          </motion.div>
                         </>
                       )}
                     </AnimatePresence>
@@ -1698,7 +2021,7 @@ export default function App() {
 
             <main className="max-w-6xl mx-auto p-4 md:p-6">
               <AnimatePresence mode="wait">
-                    {activeTab === "profile" && (
+                {activeTab === "profile" && (
                   <motion.div
                     key="profile"
                     initial={{ opacity: 0, y: 20 }}
@@ -1715,13 +2038,36 @@ export default function App() {
 
                       <div className="px-5 md:px-8 pt-12 md:pt-16 pb-6 relative z-10">
                         <div className="flex flex-col md:flex-row items-center md:items-end gap-4 md:gap-6">
-                          <div className="shrink-0 w-24 h-24 md:w-28 md:h-28 rounded-2xl md:rounded-[1.5rem] bg-slate-950 border-4 border-indigo-600 p-1 shadow-lg relative group overflow-hidden">
-                            <div className="w-full h-full rounded-xl md:rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-900 flex items-center justify-center text-white font-black text-4xl md:text-5xl shadow-inner uppercase">
-                              {stats.role.charAt(0)}
+                          <div
+                            onClick={() => setShowProfileModal(true)}
+                            className="shrink-0 w-24 h-24 md:w-28 md:h-28 rounded-2xl md:rounded-[1.5rem] bg-slate-950 border-4 border-indigo-600 p-1 shadow-lg relative group overflow-hidden cursor-pointer active:scale-95 transition-all"
+                            title="Cambiar foto de perfil"
+                          >
+                            {(stats.packCurrencies as any)?._avatar_meta
+                              ?.status === "approved" &&
+                            (stats.packCurrencies as any)?._avatar_meta
+                              ?.approvedUrl ? (
+                              <img
+                                src={
+                                  (stats.packCurrencies as any)._avatar_meta
+                                    .approvedUrl
+                                }
+                                alt={stats.username}
+                                className="w-full h-full rounded-xl md:rounded-2xl object-cover"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <div className="w-full h-full rounded-xl md:rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-900 flex items-center justify-center text-white font-black text-4xl md:text-5xl shadow-inner uppercase animate-fade-in">
+                                {stats.username
+                                  ? stats.username.charAt(0)
+                                  : stats.role.charAt(0)}
+                              </div>
+                            )}
+                            <div className="absolute inset-0 bg-slate-950/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all duration-200">
+                              <div className="w-8 h-8 md:w-10 md:h-10 bg-indigo-600 rounded-lg md:rounded-xl flex items-center justify-center text-white border border-indigo-400 shadow-md transform scale-90 group-hover:scale-100 transition-all duration-200">
+                                <Camera size={14} className="md:w-5 md:h-5" />
+                              </div>
                             </div>
-                            <button className="absolute bottom-1 right-1 w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white border-2 border-slate-950 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <Camera size={14} />
-                            </button>
                           </div>
                           <div className="flex-1 text-center md:text-left min-w-0 mt-2 md:mt-0">
                             <div className="flex flex-col md:flex-row items-center gap-2 mb-1">
@@ -1741,27 +2087,46 @@ export default function App() {
                             </p>
                           </div>
                           <div className="flex gap-3 mt-4 md:mt-0">
-                            <button 
-                               onClick={() => {
-                                 const newName = window.prompt("Ingresa nuevo nombre de usuario:", stats.username);
-                                 if (newName?.trim()) {
-                                    setStats(s => ({...s, username: newName.trim()}));
-                                    toast.success("Nombre actualizado exitosamente.");
-                                 }
-                               }}
-                               className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-black uppercase tracking-widest text-[9px] md:text-[10px] transition-all flex items-center gap-1.5 border border-slate-700 active:scale-95">
-                              <Settings size={14} /> Perfil
+                            <button
+                              onClick={() => {
+                                const newName = window.prompt(
+                                  "Ingresa nuevo nombre de usuario:",
+                                  stats.username,
+                                );
+                                if (newName?.trim()) {
+                                  const upperName = newName
+                                    .trim()
+                                    .toUpperCase();
+                                  setStats((s) => ({
+                                    ...s,
+                                    username: upperName,
+                                  }));
+                                  supabaseService.updateUserStats(stats.id, {
+                                    username: upperName,
+                                  });
+                                  toast.success(
+                                    "Nombre actualizado exitosamente.",
+                                  );
+                                }
+                              }}
+                              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-black uppercase tracking-widest text-[9px] md:text-[10px] transition-all flex items-center gap-1.5 border border-slate-700 active:scale-95"
+                            >
+                              <Pencil size={14} /> Cambiar Nombre
                             </button>
                             {stats.role === "Teacher" && (
-                              <button 
-                                onClick={() => setAssignmentModal({
-                                  teacherId: currentUserId || stats.id || "",
-                                  isOpen: true,
-                                  selectedGroups: stats.assignedGroups || [],
-                                  selectedSubjects: stats.assignedSubjects || [],
-                                  activeYear: "1"
-                                })}
-                                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-black uppercase tracking-widest text-[9px] md:text-[10px] transition-all flex items-center gap-1.5 border border-indigo-500 shadow-lg shadow-indigo-500/20 active:scale-95">
+                              <button
+                                onClick={() =>
+                                  setAssignmentModal({
+                                    teacherId: currentUserId || stats.id || "",
+                                    isOpen: true,
+                                    selectedGroups: stats.assignedGroups || [],
+                                    selectedSubjects:
+                                      stats.assignedSubjects || [],
+                                    activeYear: "1",
+                                  })
+                                }
+                                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-black uppercase tracking-widest text-[9px] md:text-[10px] transition-all flex items-center gap-1.5 border border-indigo-500 shadow-lg shadow-indigo-500/20 active:scale-95"
+                              >
                                 <UserCog size={14} /> Configurar
                               </button>
                             )}
@@ -1780,23 +2145,38 @@ export default function App() {
                             Atributos de Cuenta
                           </h3>
                           <div className="space-y-5 md:space-y-6">
-                            {(stats.role === "Teacher" 
+                            {(stats.role === "Teacher"
                               ? [
                                   {
                                     label: "Desafíos por revisar",
-                                    val: globalStudents.filter((s) => stats.assignedGroups.includes(s.grade)).reduce((acc, curr) => acc + curr.completedTasks.length, 0), // Simulating pending reviews for now
+                                    val: globalStudents
+                                      .filter((s) =>
+                                        stats.assignedGroups.includes(s.grade),
+                                      )
+                                      .reduce(
+                                        (acc, curr) =>
+                                          acc + curr.completedTasks.length,
+                                        0,
+                                      ), // Simulating pending reviews for now
                                     color: "text-emerald-400",
                                   },
                                   {
                                     label: "Medallas de alumnos",
-                                    val: globalStudents.filter((s) => stats.assignedGroups.includes(s.grade)).reduce((acc, curr) => acc + curr.tokens, 0),
+                                    val: globalStudents
+                                      .filter((s) =>
+                                        stats.assignedGroups.includes(s.grade),
+                                      )
+                                      .reduce(
+                                        (acc, curr) => acc + curr.tokens,
+                                        0,
+                                      ),
                                     color: "text-amber-400",
                                   },
                                   {
                                     label: "Racha global",
                                     val: `${globalStudents.filter((s) => stats.assignedGroups.includes(s.grade)).reduce((acc, curr) => acc + curr.streak, 0)} Días`,
                                     color: "text-rose-400",
-                                  }
+                                  },
                                 ]
                               : [
                                   {
@@ -1809,19 +2189,26 @@ export default function App() {
                                     val: `${stats.streak} Días`,
                                     color: "text-rose-400",
                                   },
-                                  ...(stats.role === "Student" 
-                                    ? [{
-                                        label: "Album completado",
-                                        val: `${Math.round((stats.collection.length / allAvailableCards.length) * 100)}%`,
-                                        color: "text-indigo-400",
-                                        bar: "bg-indigo-400",
-                                        max: 100,
-                                      }] 
-                                    : [])
+                                  ...(stats.role === "Student"
+                                    ? [
+                                        {
+                                          label: "Album completado",
+                                          val: `${Math.round((stats.collection.length / allAvailableCards.length) * 100)}%`,
+                                          color: "text-indigo-400",
+                                          bar: "bg-indigo-400",
+                                          max: 100,
+                                        },
+                                      ]
+                                    : []),
                                 ]
                             ).map((idx) => (
                               <div key={idx.label}>
-                                <div className={cn("flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-500", idx.bar ? "mb-1.5" : "mb-0")}>
+                                <div
+                                  className={cn(
+                                    "flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-500",
+                                    idx.bar ? "mb-1.5" : "mb-0",
+                                  )}
+                                >
                                   <span>{idx.label}</span>
                                   <span className={idx.color}>{idx.val}</span>
                                 </div>
@@ -1847,61 +2234,86 @@ export default function App() {
                         {/* ADMIN MASTER KEY CARD */}
                         {stats.role === "Admin" && (
                           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-lg relative overflow-hidden group">
-                           <div className="absolute top-0 right-0 w-32 h-32 bg-violet-500/5 rounded-full -mr-16 -mt-16 group-hover:scale-110 transition-transform duration-700"></div>
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-violet-500/5 rounded-full -mr-16 -mt-16 group-hover:scale-110 transition-transform duration-700"></div>
                             <h3 className="text-xl font-black italic uppercase tracking-tight text-white mb-5 flex items-center gap-3">
                               <Lock className="text-violet-400" size={20} />{" "}
                               Seguridad
                             </h3>
                             <div className="space-y-4">
-                            <div className="bg-slate-800/50 border border-slate-700/50 p-4 rounded-2xl flex items-center justify-between group/key">
+                              <div className="bg-slate-800/50 border border-slate-700/50 p-4 rounded-2xl flex items-center justify-between group/key">
                                 <div>
                                   <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1">
                                     Llave Registro Docentes
                                   </span>
                                   <div className="flex items-center gap-2">
                                     {isEditingMasterKey ? (
-                                      <input 
+                                      <input
                                         type="text"
                                         value={tempMasterKey}
-                                        onChange={(e) => setTempMasterKey(e.target.value.toUpperCase())}
+                                        onChange={(e) =>
+                                          setTempMasterKey(
+                                            e.target.value.toUpperCase(),
+                                          )
+                                        }
                                         className="bg-slate-950 border border-indigo-500/50 text-white px-2 py-1 rounded-lg text-sm font-black w-32 outline-none focus:ring-2 focus:ring-indigo-500/30"
                                         autoFocus
                                       />
                                     ) : (
                                       <span className="text-sm font-black text-white uppercase tracking-[0.1em]">
-                                        {showMasterKeyInProfile ? masterTeacherKey : "••••••••"}
+                                        {showMasterKeyInProfile
+                                          ? masterTeacherKey
+                                          : "••••••••"}
                                       </span>
                                     )}
-                                    <button 
-                                      onClick={() => setShowMasterKeyInProfile(!showMasterKeyInProfile)}
+                                    <button
+                                      onClick={() =>
+                                        setShowMasterKeyInProfile(
+                                          !showMasterKeyInProfile,
+                                        )
+                                      }
                                       className="text-slate-600 hover:text-slate-400 p-1"
                                     >
-                                      {showMasterKeyInProfile ? <EyeOff size={12} /> : <Eye size={12} />}
+                                      {showMasterKeyInProfile ? (
+                                        <EyeOff size={12} />
+                                      ) : (
+                                        <Eye size={12} />
+                                      )}
                                     </button>
                                   </div>
                                 </div>
                                 <div className="flex gap-2">
                                   {isEditingMasterKey ? (
                                     <>
-                                      <button 
+                                      <button
                                         onClick={() => {
                                           if (tempMasterKey.trim()) {
-                                            const newKey = tempMasterKey.trim().toUpperCase();
-                                            setMasterTeacherKey(normKey => newKey);
+                                            const newKey = tempMasterKey
+                                              .trim()
+                                              .toUpperCase();
+                                            setMasterTeacherKey(
+                                              (normKey) => newKey,
+                                            );
                                             setIsEditingMasterKey(false);
                                             // Persist to Supabase
-                                            supabaseService.setGlobalMasterKey(newKey).then(() => {
-                                              toast.success("Llave maestra actualizada globalmente (MAYÚSCULAS).");
-                                            }).catch(() => {
-                                              toast.success("Llave maestra actualizada (local).");
-                                            });
+                                            supabaseService
+                                              .setGlobalMasterKey(newKey)
+                                              .then(() => {
+                                                toast.success(
+                                                  "Llave maestra actualizada globalmente (MAYÚSCULAS).",
+                                                );
+                                              })
+                                              .catch(() => {
+                                                toast.success(
+                                                  "Llave maestra actualizada (local).",
+                                                );
+                                              });
                                           }
                                         }}
                                         className="p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 hover:bg-emerald-500/20 transition-all shadow-md active:scale-95"
                                       >
                                         <CheckCircle2 size={14} />
                                       </button>
-                                      <button 
+                                      <button
                                         onClick={() => {
                                           setIsEditingMasterKey(false);
                                           setTempMasterKey(masterTeacherKey);
@@ -1912,7 +2324,7 @@ export default function App() {
                                       </button>
                                     </>
                                   ) : (
-                                    <button 
+                                    <button
                                       onClick={() => {
                                         setIsEditingMasterKey(true);
                                         setShowMasterKeyInProfile(true);
@@ -1925,7 +2337,8 @@ export default function App() {
                                 </div>
                               </div>
                               <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest leading-relaxed">
-                                Esta llave es necesaria para que nuevos maestros puedan crear una cuenta.
+                                Esta llave es necesaria para que nuevos maestros
+                                puedan crear una cuenta.
                               </p>
                             </div>
                           </div>
@@ -1933,19 +2346,22 @@ export default function App() {
 
                         {/* QUICK MENU */}
                         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-2 md:p-3 shadow-md">
-                          <button className="w-full flex items-center justify-between p-4 rounded-2xl text-slate-400 hover:text-white hover:bg-indigo-500/10 transition-all group">
+                          <button
+                            onClick={() => setShowProfileModal(true)}
+                            className="w-full flex items-center justify-between p-4 rounded-2xl text-slate-400 hover:text-white hover:bg-indigo-500/10 transition-all group"
+                          >
                             <div className="flex items-center gap-3">
-                              <UserCog
+                              <Camera
                                 size={18}
                                 className="group-hover:text-indigo-400"
                               />
                               <span className="text-[10px] font-black uppercase tracking-[0.2em]">
-                                Editar Perfil
+                                Cambiar Foto de Perfil
                               </span>
                             </div>
                             <ChevronRight size={14} />
                           </button>
-                          <button 
+                          <button
                             onClick={() => setShowPasswordModal(true)}
                             className="w-full flex items-center justify-between p-4 rounded-2xl text-slate-400 hover:text-white hover:bg-cyan-500/10 transition-all group"
                           >
@@ -1982,9 +2398,17 @@ export default function App() {
                             </h3>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                               {stats.completedTasks.length > 0 ? (
-                                stats.completedTasks.map((id) => {
-                                  const taskDetails = Object.values(enrichedAcademicContent).flat().flatMap(s => s.topics).flatMap(t => t.tasks).find(t => t.id === id);
-                                  const taskTitle = taskDetails?.title || `MISIÓN_${id.slice(-4)}`;
+                                Array.from(new Set(stats.completedTasks)).map((id) => {
+                                  const taskDetails = Object.values(
+                                    enrichedAcademicContent,
+                                  )
+                                    .flat()
+                                    .flatMap((s) => s.topics)
+                                    .flatMap((t) => t.tasks)
+                                    .find((t) => t.id === id);
+                                  const taskTitle =
+                                    taskDetails?.title ||
+                                    `MISIÓN_${id.slice(-4)}`;
                                   return (
                                     <div
                                       key={id}
@@ -2026,7 +2450,11 @@ export default function App() {
                                   Alumnos en Radar
                                 </h4>
                                 <p className="text-5xl md:text-6xl font-black italic leading-none">
-                                  {globalStudents.filter(s => stats.assignedGroups.includes(s.grade)).length}
+                                  {
+                                    globalStudents.filter((s) =>
+                                      stats.assignedGroups.includes(s.grade),
+                                    ).length
+                                  }
                                 </p>
                               </div>
                               <div className="bg-slate-800 border border-slate-700 rounded-[1.5rem] md:rounded-3xl p-6 md:p-8 space-y-4 border-b-8 border-slate-950">
@@ -2034,7 +2462,15 @@ export default function App() {
                                   Misiones por Validar
                                 </h4>
                                 <p className="text-6xl font-black italic text-white leading-none">
-                                  {globalStudents.filter(s => stats.assignedGroups.includes(s.grade)).reduce((acc, curr) => acc + (curr.pendingTasks?.length || 0), 0)}
+                                  {globalStudents
+                                    .filter((s) =>
+                                      stats.assignedGroups.includes(s.grade),
+                                    )
+                                    .reduce(
+                                      (acc, curr) =>
+                                        acc + (curr.pendingTasks?.length || 0),
+                                      0,
+                                    )}
                                 </p>
                               </div>
                             </div>
@@ -2043,13 +2479,22 @@ export default function App() {
                                 Materias Asignadas
                               </h4>
                               <div className="flex flex-wrap gap-3">
-                                {stats.assignedSubjects.map((sid) => {
-                                  const baseId = sid.includes(":") ? sid.split(":")[0] : sid;
-                                  const group = sid.includes(":") ? sid.split(":")[1] : null;
+                                {Array.from(new Set(stats.assignedSubjects)).map((sid) => {
+                                  const baseId = sid.includes(":")
+                                    ? sid.split(":")[0]
+                                    : sid;
+                                  const group = sid.includes(":")
+                                    ? sid.split(":")[1]
+                                    : null;
 
-                                  let prettyName = baseId.replace("_", " ").toUpperCase();
+                                  let prettyName = baseId
+                                    .replace("_", " ")
+                                    .toUpperCase();
                                   for (const year in enrichedAcademicContent) {
-                                    const sub = (enrichedAcademicContent[year as Year] || []).find((s) => s.id === baseId);
+                                    const sub = (
+                                      enrichedAcademicContent[year as Year] ||
+                                      []
+                                    ).find((s) => s.id === baseId);
                                     if (sub) {
                                       prettyName = sub.name;
                                       break;
@@ -2061,7 +2506,14 @@ export default function App() {
                                       key={sid}
                                       className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs font-black uppercase tracking-tight text-white mb-1"
                                     >
-                                      {prettyName} {group ? <span className="text-cyan-400 ml-1">[{group}]</span> : ""}
+                                      {prettyName}{" "}
+                                      {group ? (
+                                        <span className="text-cyan-400 ml-1">
+                                          [{group}]
+                                        </span>
+                                      ) : (
+                                        ""
+                                      )}
                                     </span>
                                   );
                                 })}
@@ -2069,8 +2521,6 @@ export default function App() {
                             </div>
                           </div>
                         )}
-
-
                       </div>
                     </div>
                   </motion.div>
@@ -2088,9 +2538,7 @@ export default function App() {
                       <div className="flex flex-col lg:flex-row items-center lg:items-end justify-between gap-4 lg:gap-6 text-center lg:text-left">
                         <div className="px-1 lg:px-0">
                           <h2 className="text-3xl lg:text-5xl font-black italic uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-slate-100 to-slate-500 pb-1 pr-2">
-                            {stats.role === "Admin"
-                              ? "Asignación"
-                              : "Desafíos"}
+                            {stats.role === "Admin" ? "Asignación" : "Desafíos"}
                           </h2>
                           <p className="text-indigo-400 font-black uppercase tracking-[0.2em] text-xs mt-1">
                             {stats.role === "Admin"
@@ -2108,7 +2556,10 @@ export default function App() {
                                   key={y}
                                   onClick={() => {
                                     if (stats.grade?.[0] !== y) {
-                                      setStats((prev) => ({ ...prev, grade: (y + "A") as Grade }));
+                                      setStats((prev) => ({
+                                        ...prev,
+                                        grade: (y + "A") as Grade,
+                                      }));
                                       setSelectedSubject(null);
                                       setSelectedTopic(null);
                                       setSelectedTask(null);
@@ -2121,22 +2572,33 @@ export default function App() {
                                       : "text-slate-500 hover:text-slate-300 hover:bg-slate-800/30",
                                   )}
                                 >
-                                  <GraduationCap size={14} className={cn((stats.grade?.[0] || "1") === y ? "text-white" : "text-slate-600")} />
+                                  <GraduationCap
+                                    size={14}
+                                    className={cn(
+                                      (stats.grade?.[0] || "1") === y
+                                        ? "text-white"
+                                        : "text-slate-600",
+                                    )}
+                                  />
                                   <span>{y}º Año</span>
                                 </button>
                               ))}
                             </div>
-                            
+
                             {/* Selector de Grupo */}
                             <div className="flex bg-slate-900/30 p-1 rounded-2xl border border-slate-800/50 gap-1 w-full lg:w-96">
                               {["A", "B", "C", "D"].map((letter) => {
                                 const currentYear = stats.grade?.[0] || "1";
-                                const fullGrade = (currentYear + letter) as Grade;
+                                const fullGrade = (currentYear +
+                                  letter) as Grade;
                                 return (
                                   <button
                                     key={fullGrade}
                                     onClick={() => {
-                                      setStats((prev) => ({ ...prev, grade: fullGrade }));
+                                      setStats((prev) => ({
+                                        ...prev,
+                                        grade: fullGrade,
+                                      }));
                                       setSelectedSubject(null);
                                       setSelectedTopic(null);
                                       setSelectedTask(null);
@@ -2156,15 +2618,27 @@ export default function App() {
                           </div>
                         )}
 
-                        {(stats.role === "Teacher" || stats.role === "Admin") && (
+                        {(stats.role === "Teacher" ||
+                          stats.role === "Admin") && (
                           <button
                             onClick={() => {
                               // Auto-fill some fields based on assigned subjects in teacher profile
-                              const defaultSubId = (stats.assignedSubjects && stats.assignedSubjects.length > 0) 
-                                ? (stats.assignedSubjects[0].includes(":") ? stats.assignedSubjects[0].split(":")[0] : stats.assignedSubjects[0])
-                                : "mat_1";
-                              setAiChallengeForm({ subjectId: defaultSubId, topicName: "", idea: "" });
-                              setManualChallengeForm(prev => ({ ...prev, subjectId: defaultSubId }));
+                              const defaultSubId =
+                                stats.assignedSubjects &&
+                                stats.assignedSubjects.length > 0
+                                  ? stats.assignedSubjects[0].includes(":")
+                                    ? stats.assignedSubjects[0].split(":")[0]
+                                    : stats.assignedSubjects[0]
+                                  : "mat_1";
+                              setAiChallengeForm({
+                                subjectId: defaultSubId,
+                                topicName: "",
+                                idea: "",
+                              });
+                              setManualChallengeForm((prev) => ({
+                                ...prev,
+                                subjectId: defaultSubId,
+                              }));
                               setShowCreateChallengeModal(true);
                             }}
                             className="flex items-center gap-2 px-6 py-3 bg-cyan-600 hover:bg-cyan-500 rounded-2xl text-white font-black uppercase tracking-widest text-xs transition-all shadow-lg active:scale-95 shadow-cyan-600/20 hover:shadow-cyan-500/30"
@@ -2185,15 +2659,22 @@ export default function App() {
                                     return (stats.grade?.[0] || "1") === grade;
                                   }
                                   if (stats.role === "Teacher") {
-                                    const hasIntegrationThisYear = stats.assignedSubjects.some((s) => {
-                                      const baseId = s.includes(":") ? s.split(":")[0] : s;
-                                      return baseId === `int_cur_${grade}`;
-                                    });
+                                    const hasIntegrationThisYear =
+                                      stats.assignedSubjects.some((s) => {
+                                        const baseId = s.includes(":")
+                                          ? s.split(":")[0]
+                                          : s;
+                                        return baseId === `int_cur_${grade}`;
+                                      });
                                     if (hasIntegrationThisYear) return true;
-                                    return stats.assignedSubjects.some((subj) => {
-                                      const baseId = subj.includes(":") ? subj.split(":")[0] : subj;
-                                      return baseId === s.id;
-                                    });
+                                    return stats.assignedSubjects.some(
+                                      (subj) => {
+                                        const baseId = subj.includes(":")
+                                          ? subj.split(":")[0]
+                                          : subj;
+                                        return baseId === s.id;
+                                      },
+                                    );
                                   }
                                   return (stats.grade?.[0] || "1") === grade;
                                 })
@@ -2251,7 +2732,10 @@ export default function App() {
                               <span className="text-indigo-400">
                                 {(() => {
                                   for (const year in enrichedAcademicContent) {
-                                    const sub = (enrichedAcademicContent[year as Year] || []).find(s => s.id === selectedSubject);
+                                    const sub = (
+                                      enrichedAcademicContent[year as Year] ||
+                                      []
+                                    ).find((s) => s.id === selectedSubject);
                                     if (sub) return sub.name;
                                   }
                                   return "Materia no encontrada";
@@ -2262,7 +2746,9 @@ export default function App() {
                               {(() => {
                                 let subject = null;
                                 for (const year in enrichedAcademicContent) {
-                                  subject = (enrichedAcademicContent[year as Year] || []).find(s => s.id === selectedSubject);
+                                  subject = (
+                                    enrichedAcademicContent[year as Year] || []
+                                  ).find((s) => s.id === selectedSubject);
                                   if (subject) break;
                                 }
                                 return subject?.topics.map((topic) => (
@@ -2310,9 +2796,13 @@ export default function App() {
                               <Zap className="text-indigo-400" size={32} />
                               {(() => {
                                 for (const year in enrichedAcademicContent) {
-                                  const sub = (enrichedAcademicContent[year as Year] || []).find(s => s.id === selectedSubject);
+                                  const sub = (
+                                    enrichedAcademicContent[year as Year] || []
+                                  ).find((s) => s.id === selectedSubject);
                                   if (sub) {
-                                    const topic = sub.topics.find((t) => t.id === selectedTopic);
+                                    const topic = sub.topics.find(
+                                      (t) => t.id === selectedTopic,
+                                    );
                                     if (topic) return topic.name;
                                   }
                                 }
@@ -2324,16 +2814,22 @@ export default function App() {
                               {(() => {
                                 let topic = null;
                                 for (const year in enrichedAcademicContent) {
-                                  const sub = (enrichedAcademicContent[year as Year] || []).find(s => s.id === selectedSubject);
+                                  const sub = (
+                                    enrichedAcademicContent[year as Year] || []
+                                  ).find((s) => s.id === selectedSubject);
                                   if (sub) {
-                                    topic = sub.topics.find((t) => t.id === selectedTopic);
+                                    topic = sub.topics.find(
+                                      (t) => t.id === selectedTopic,
+                                    );
                                     if (topic) break;
                                   }
                                 }
                                 return topic?.tasks.map((task) => {
                                   const isCompleted =
                                     stats.completedTasks.includes(task.id);
-                                  const isPending = stats.pendingTasks?.includes(task.id) || false;
+                                  const isPending =
+                                    stats.pendingTasks?.includes(task.id) ||
+                                    false;
                                   const isTaskActive = selectedTask === task.id;
                                   const diffConfig = {
                                     Easy: {
@@ -2364,7 +2860,9 @@ export default function App() {
                                         "bg-slate-900 border p-6 rounded-[2.5rem] transition-all relative overflow-hidden shadow-md",
                                         isCompleted
                                           ? "border-emerald-500/20 opacity-60"
-                                          : isPending ? "border-amber-500/40 opacity-80" : "border-slate-800 hover:border-indigo-500/30",
+                                          : isPending
+                                            ? "border-amber-500/40 opacity-80"
+                                            : "border-slate-800 hover:border-indigo-500/30",
                                         isTaskActive &&
                                           "border-indigo-500 ring-1 ring-indigo-500/50",
                                       )}
@@ -2374,7 +2872,9 @@ export default function App() {
                                           "absolute top-0 right-0 w-32 h-32 bg-gradient-to-br opacity-5 pointer-events-none rotate-45 transform translate-x-12 -translate-y-12",
                                           isCompleted
                                             ? "from-emerald-500 to-transparent"
-                                            : isPending ? "from-amber-500 to-transparent" : "from-indigo-500 to-transparent",
+                                            : isPending
+                                              ? "from-amber-500 to-transparent"
+                                              : "from-indigo-500 to-transparent",
                                         )}
                                       />
 
@@ -2399,8 +2899,7 @@ export default function App() {
                                             )}
                                             {isPending && (
                                               <span className="bg-amber-500/20 text-amber-400 px-3 py-1.5 rounded-full text-xs font-black uppercase tracking-widest border border-amber-500/30 flex items-center gap-1.5">
-                                                <Flame size={12} />{" "}
-                                                En Revisión
+                                                <Flame size={12} /> En Revisión
                                               </span>
                                             )}
                                           </div>
@@ -2414,27 +2913,27 @@ export default function App() {
                                             </p>
 
                                             {isTaskActive && (
-                                                <motion.div
-                                                  initial={{
-                                                    height: 0,
-                                                    opacity: 0,
-                                                  }}
-                                                  animate={{
-                                                    height: "auto",
-                                                    opacity: 1,
-                                                  }}
-                                                  className="mt-6 p-6 bg-slate-800/50 rounded-2xl border border-slate-700 space-y-4"
-                                                >
-                                                  <h5 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">
-                                                    Protocolo de Desafío:
-                                                  </h5>
-                                                  <div className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed font-medium">
-                                                    {task.instructions ||
-                                                      task.description ||
-                                                      "Sigue las indicaciones del profesor para completar este reto."}
-                                                  </div>
-                                                </motion.div>
-                                              )}
+                                              <motion.div
+                                                initial={{
+                                                  height: 0,
+                                                  opacity: 0,
+                                                }}
+                                                animate={{
+                                                  height: "auto",
+                                                  opacity: 1,
+                                                }}
+                                                className="mt-6 p-6 bg-slate-800/50 rounded-2xl border border-slate-700 space-y-4"
+                                              >
+                                                <h5 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">
+                                                  Protocolo de Desafío:
+                                                </h5>
+                                                <div className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed font-medium">
+                                                  {task.instructions ||
+                                                    task.description ||
+                                                    "Sigue las indicaciones del profesor para completar este reto."}
+                                                </div>
+                                              </motion.div>
+                                            )}
                                           </div>
 
                                           <div className="flex flex-wrap gap-3 pt-2">
@@ -2458,17 +2957,41 @@ export default function App() {
                                             {!isTaskActive ? (
                                               <button
                                                 onClick={() => {
-                                                                   if (stats.dailyLimits) {
-                                                    if (task.difficulty === 'Easy' && (stats.dailyLimits.easyCompleted || 0) >= 4) {
-                                                      toast.warning('Has alcanzado el límite diario de 4 desafíos básicos. ¡Vuelve mañana!');
+                                                  if (stats.dailyLimits) {
+                                                    if (
+                                                      task.difficulty ===
+                                                        "Easy" &&
+                                                      (stats.dailyLimits
+                                                        .easyCompleted || 0) >=
+                                                        4
+                                                    ) {
+                                                      toast.warning(
+                                                        "Has alcanzado el límite diario de 4 desafíos básicos. ¡Vuelve mañana!",
+                                                      );
                                                       return;
                                                     }
-                                                    if (task.difficulty === 'Medium' && (stats.dailyLimits.mediumCompleted || 0) >= 2) {
-                                                      toast.warning('Has alcanzado el límite diario de 2 desafíos intermedios. ¡Vuelve mañana!');
+                                                    if (
+                                                      task.difficulty ===
+                                                        "Medium" &&
+                                                      (stats.dailyLimits
+                                                        .mediumCompleted ||
+                                                        0) >= 2
+                                                    ) {
+                                                      toast.warning(
+                                                        "Has alcanzado el límite diario de 2 desafíos intermedios. ¡Vuelve mañana!",
+                                                      );
                                                       return;
                                                     }
-                                                    if (task.difficulty === 'Hard' && (stats.dailyLimits.hardCompleted || 0) >= 1) {
-                                                      toast.warning('Has alcanzado el límite diario de 1 desafío difícil. ¡Vuelve mañana!');
+                                                    if (
+                                                      task.difficulty ===
+                                                        "Hard" &&
+                                                      (stats.dailyLimits
+                                                        .hardCompleted || 0) >=
+                                                        1
+                                                    ) {
+                                                      toast.warning(
+                                                        "Has alcanzado el límite diario de 1 desafío difícil. ¡Vuelve mañana!",
+                                                      );
                                                       return;
                                                     }
                                                   }
@@ -2477,19 +3000,33 @@ export default function App() {
                                                   if (task.isAIQuiz) {
                                                     let subjectName = "";
                                                     let topicName = "";
-                                                    
+
                                                     for (const year in enrichedAcademicContent) {
-                                                      const sub = (enrichedAcademicContent[year as Year] || []).find(s => s.id === selectedSubject);
+                                                      const sub = (
+                                                        enrichedAcademicContent[
+                                                          year as Year
+                                                        ] || []
+                                                      ).find(
+                                                        (s) =>
+                                                          s.id ===
+                                                          selectedSubject,
+                                                      );
                                                       if (sub) {
                                                         subjectName = sub.name;
-                                                        const topic = sub.topics.find(t => t.id === selectedTopic);
+                                                        const topic =
+                                                          sub.topics.find(
+                                                            (t) =>
+                                                              t.id ===
+                                                              selectedTopic,
+                                                          );
                                                         if (topic) {
-                                                          topicName = topic.name;
+                                                          topicName =
+                                                            topic.name;
                                                           break;
                                                         }
                                                       }
                                                     }
-                                                    
+
                                                     generateAIQuiz(
                                                       subjectName,
                                                       topicName,
@@ -2615,7 +3152,9 @@ export default function App() {
                                                           toast.success(
                                                             "Evidencia subida correctamente. El profesor validará tu desafío.",
                                                           );
-                                                          submitTaskForReview(task);
+                                                          submitTaskForReview(
+                                                            task,
+                                                          );
                                                           setSelectedTask(null);
                                                         }
                                                       };
@@ -2673,41 +3212,86 @@ export default function App() {
                               Gestión Maestro de Docentes y Grupos
                             </p>
                           </div>
-                          
+
                           <div className="flex bg-slate-900/50 p-1 rounded-xl border border-slate-800 gap-1 w-full md:w-auto">
                             <button
-                               onClick={() => setAdminDashboardTab("stats")}
-                               className={cn(
-                                 "flex-1 md:flex-none px-3 sm:px-4 md:px-6 py-2.5 sm:py-3 rounded-lg text-[9px] sm:text-xs font-black uppercase tracking-widest transition-all",
-                                 adminDashboardTab === "stats"
-                                   ? "bg-slate-800 text-white shadow-md shadow-black/20"
-                                   : "text-slate-500 hover:text-slate-300 hover:bg-slate-800/30",
-                               )}
-                             >
-                               Estadística
-                             </button>
-                             <button
-                               onClick={() => setAdminDashboardTab("teachers")}
-                               className={cn(
-                                 "flex-1 md:flex-none px-3 sm:px-4 md:px-6 py-2.5 sm:py-3 rounded-lg text-[9px] sm:text-xs font-black uppercase tracking-widest transition-all",
-                                 adminDashboardTab === "teachers"
-                                   ? "bg-slate-800 text-white shadow-md shadow-black/20"
-                                   : "text-slate-500 hover:text-slate-300 hover:bg-slate-800/30",
-                               )}
-                             >
-                               Docentes
-                             </button>
-                             <button
-                               onClick={() => setAdminDashboardTab("students")}
-                               className={cn(
-                                 "flex-1 md:flex-none px-3 sm:px-4 md:px-6 py-2.5 sm:py-3 rounded-lg text-[9px] sm:text-xs font-black uppercase tracking-widest transition-all",
-                                 adminDashboardTab === "students"
-                                   ? "bg-slate-800 text-white shadow-md shadow-black/20"
-                                   : "text-slate-500 hover:text-slate-300 hover:bg-slate-800/30",
-                               )}
-                             >
-                               Alumnos
-                             </button>
+                              onClick={() => setAdminDashboardTab("stats")}
+                              className={cn(
+                                "flex-1 md:flex-none px-3 sm:px-4 md:px-6 py-2.5 sm:py-3 rounded-lg text-[9px] sm:text-xs font-black uppercase tracking-widest transition-all",
+                                adminDashboardTab === "stats"
+                                  ? "bg-slate-800 text-white shadow-md shadow-black/20"
+                                  : "text-slate-500 hover:text-slate-300 hover:bg-slate-800/30",
+                              )}
+                            >
+                              Estadística
+                            </button>
+                            <button
+                              onClick={() => setAdminDashboardTab("teachers")}
+                              className={cn(
+                                "flex-1 md:flex-none px-3 sm:px-4 md:px-6 py-2.5 sm:py-3 rounded-lg text-[9px] sm:text-xs font-black uppercase tracking-widest transition-all",
+                                adminDashboardTab === "teachers"
+                                  ? "bg-slate-800 text-white shadow-md shadow-black/20"
+                                  : "text-slate-500 hover:text-slate-300 hover:bg-slate-800/30",
+                              )}
+                            >
+                              Docentes
+                            </button>
+                            <button
+                              onClick={() => setAdminDashboardTab("students")}
+                              className={cn(
+                                "flex-1 md:flex-none px-3 sm:px-4 md:px-6 py-2.5 sm:py-3 rounded-lg text-[9px] sm:text-xs font-black uppercase tracking-widest transition-all",
+                                adminDashboardTab === "students"
+                                  ? "bg-slate-800 text-white shadow-md shadow-black/20"
+                                  : "text-slate-500 hover:text-slate-300 hover:bg-slate-800/30",
+                              )}
+                            >
+                              Alumnos
+                            </button>
+                            <button
+                              onClick={() => setAdminDashboardTab("avatars")}
+                              className={cn(
+                                "flex-1 md:flex-none px-3 sm:px-4 md:px-6 py-2.5 sm:py-3 rounded-lg text-[9px] sm:text-xs font-black uppercase tracking-widest transition-all flex items-center gap-1",
+                                adminDashboardTab === "avatars"
+                                  ? "bg-slate-800 text-white shadow-md shadow-black/20"
+                                  : "text-slate-500 hover:text-slate-300 hover:bg-slate-800/30",
+                              )}
+                            >
+                              Fotos Perfil
+                              {pendingAvatarsCount > 0 && (
+                                <span className="bg-amber-500 text-slate-900 font-extrabold text-[8px] h-4 w-4 rounded-full flex items-center justify-center animate-pulse">
+                                  {pendingAvatarsCount}
+                                </span>
+                              )}
+                            </button>
+                            <button
+                              onClick={() => setAdminDashboardTab("pendientes")}
+                              className={cn(
+                                "flex-1 md:flex-none px-3 sm:px-4 md:px-6 py-2.5 sm:py-3 rounded-lg text-[9px] sm:text-xs font-black uppercase tracking-widest transition-all flex items-center gap-1.5",
+                                adminDashboardTab === "pendientes"
+                                  ? "bg-slate-800 text-white shadow-md shadow-black/20"
+                                  : "text-slate-500 hover:text-slate-300 hover:bg-slate-800/30",
+                              )}
+                            >
+                              <span className="relative flex h-2 w-2">
+                                {totalPendingsCount > 0 && (
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-450 opacity-75"></span>
+                                )}
+                                <span
+                                  className={cn(
+                                    "relative inline-flex rounded-full h-2 w-2",
+                                    totalPendingsCount > 0
+                                      ? "bg-rose-500"
+                                      : "bg-slate-500",
+                                  )}
+                                ></span>
+                              </span>
+                              Pendientes
+                              {totalPendingsCount > 0 && (
+                                <span className="bg-rose-600 text-white font-extrabold text-[9px] px-2 py-0.5 rounded-full">
+                                  {totalPendingsCount}
+                                </span>
+                              )}
+                            </button>
                           </div>
                         </div>
 
@@ -2717,31 +3301,62 @@ export default function App() {
                               {
                                 label: "Plaza Docente",
                                 val: teachers.length.toString(),
-                                icon: <UserCog size={24} className="text-indigo-400" />
+                                icon: (
+                                  <UserCog
+                                    size={24}
+                                    className="text-indigo-400"
+                                  />
+                                ),
                               },
                               {
                                 label: "Matrícula Activa",
                                 val: globalStudents.length.toString(),
-                                icon: <Users size={24} className="text-emerald-400" />
+                                icon: (
+                                  <Users
+                                    size={24}
+                                    className="text-emerald-400"
+                                  />
+                                ),
                               },
                               {
                                 label: "Grupos Asignados",
                                 val: SCHOOL_GROUPS.length.toString(),
-                                icon: <BookOpen size={24} className="text-rose-400" />
+                                icon: (
+                                  <BookOpen
+                                    size={24}
+                                    className="text-rose-400"
+                                  />
+                                ),
                               },
                               {
                                 label: "Misiones Resueltas",
-                                val: globalStudents.reduce((acc, curr) => acc + curr.completedTasks.length, 0).toString(),
-                                icon: <TrendingUp size={24} className="text-amber-400" />
+                                val: globalStudents
+                                  .reduce(
+                                    (acc, curr) =>
+                                      acc + curr.completedTasks.length,
+                                    0,
+                                  )
+                                  .toString(),
+                                icon: (
+                                  <TrendingUp
+                                    size={24}
+                                    className="text-amber-400"
+                                  />
+                                ),
                               },
                               {
                                 label: "Llave de Docente",
                                 val: masterTeacherKey,
-                                icon: <Lock size={24} className="text-violet-400" />,
+                                icon: (
+                                  <Lock size={24} className="text-violet-400" />
+                                ),
                                 isEditable: true,
-                              }
+                              },
                             ].map((stat, i) => (
-                              <div key={i} className="bg-slate-900 border border-slate-800 p-6 rounded-[2rem] flex flex-col gap-4 hover:border-slate-700 transition-all shadow-lg relative group overflow-hidden">
+                              <div
+                                key={i}
+                                className="bg-slate-900 border border-slate-800 p-6 rounded-[2rem] flex flex-col gap-4 hover:border-slate-700 transition-all shadow-lg relative group overflow-hidden"
+                              >
                                 <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-indigo-500/5 to-transparent rounded-bl-[4rem]"></div>
                                 <div className="flex items-center gap-4">
                                   <div className="w-12 h-12 bg-slate-800/50 rounded-2xl flex items-center justify-center relative z-10">
@@ -2751,28 +3366,38 @@ export default function App() {
                                     <div className="absolute top-4 right-4 flex gap-2">
                                       {isEditingMasterKey ? (
                                         <div className="flex items-center gap-1">
-                                          <button 
+                                          <button
                                             onClick={() => {
                                               if (tempMasterKey.trim()) {
-                                                const newKey = tempMasterKey.trim();
+                                                const newKey =
+                                                  tempMasterKey.trim();
                                                 setMasterTeacherKey(newKey);
                                                 setIsEditingMasterKey(false);
                                                 // Persist to Supabase
-                                                supabaseService.setGlobalMasterKey(newKey).then(() => {
-                                                  toast.success("Llave actualizada globalmente.");
-                                                }).catch(() => {
-                                                  toast.success("Llave actualizada.");
-                                                });
+                                                supabaseService
+                                                  .setGlobalMasterKey(newKey)
+                                                  .then(() => {
+                                                    toast.success(
+                                                      "Llave actualizada globalmente.",
+                                                    );
+                                                  })
+                                                  .catch(() => {
+                                                    toast.success(
+                                                      "Llave actualizada.",
+                                                    );
+                                                  });
                                               }
                                             }}
                                             className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30 hover:bg-emerald-500/30 transition-all"
                                           >
                                             <CheckCircle2 size={12} />
                                           </button>
-                                          <button 
+                                          <button
                                             onClick={() => {
                                               setIsEditingMasterKey(false);
-                                              setTempMasterKey(masterTeacherKey);
+                                              setTempMasterKey(
+                                                masterTeacherKey,
+                                              );
                                             }}
                                             className="p-2 bg-slate-800 text-slate-400 rounded-xl border border-slate-700 hover:text-white transition-all"
                                           >
@@ -2780,8 +3405,10 @@ export default function App() {
                                           </button>
                                         </div>
                                       ) : (
-                                        <button 
-                                          onClick={() => setIsEditingMasterKey(true)}
+                                        <button
+                                          onClick={() =>
+                                            setIsEditingMasterKey(true)
+                                          }
                                           className="p-2 bg-slate-800 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity border border-slate-700 hover:text-indigo-400 shadow-sm"
                                         >
                                           <Pencil size={12} />
@@ -2792,18 +3419,27 @@ export default function App() {
                                 </div>
                                 <div className="relative z-10">
                                   {/* Value Display or Edit Input */}
-                                  {(stat as any).isEditable && isEditingMasterKey ? (
-                                    <input 
+                                  {(stat as any).isEditable &&
+                                  isEditingMasterKey ? (
+                                    <input
                                       type="text"
                                       value={tempMasterKey}
-                                      onChange={(e) => setTempMasterKey(e.target.value.toUpperCase())}
+                                      onChange={(e) =>
+                                        setTempMasterKey(
+                                          e.target.value.toUpperCase(),
+                                        )
+                                      }
                                       className="bg-slate-950 border border-indigo-500/50 text-indigo-400 text-xl font-black italic rounded-lg px-2 py-1 w-full outline-none ring-4 ring-indigo-500/10 mb-1"
                                       autoFocus
                                     />
                                   ) : (
-                                    <div className="text-2xl font-black italic text-slate-100 mb-1 truncate">{stat.val}</div>
+                                    <div className="text-2xl font-black italic text-slate-100 mb-1 truncate">
+                                      {stat.val}
+                                    </div>
                                   )}
-                                  <div className="text-[9px] font-black uppercase tracking-widest text-slate-500">{stat.label}</div>
+                                  <div className="text-[9px] font-black uppercase tracking-widest text-slate-500">
+                                    {stat.label}
+                                  </div>
                                 </div>
                               </div>
                             ))}
@@ -2811,202 +3447,286 @@ export default function App() {
                         ) : adminDashboardTab === "teachers" ? (
                           <div className="space-y-6">
                             <div className="flex justify-end">
-                              <button 
-                                onClick={() => setShowCreateUserModal({ isOpen: true, role: "Teacher" })}
-                                className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-cyan-600 hover:bg-cyan-500 rounded-2xl text-white font-black uppercase tracking-widest text-[10px] md:text-xs transition-all shadow-lg shadow-cyan-600/20 active:scale-95">
+                              <button
+                                onClick={() =>
+                                  setShowCreateUserModal({
+                                    isOpen: true,
+                                    role: "Teacher",
+                                  })
+                                }
+                                className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-cyan-600 hover:bg-cyan-500 rounded-2xl text-white font-black uppercase tracking-widest text-[10px] md:text-xs transition-all shadow-lg shadow-cyan-600/20 active:scale-95"
+                              >
                                 <Plus size={18} /> Nuevo Docente
                               </button>
                             </div>
                             <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] overflow-hidden shadow-md">
-                          <div className="px-6 md:px-8 py-5 border-b border-slate-800 flex justify-between items-center bg-slate-800/30">
-                            <h4 className="text-xs font-black uppercase tracking-widest text-white italic">
-                              Plantilla Docente
-                            </h4>
-                          </div>
-                          
-                          {/* Desktop Table View */}
-                          <div className="hidden md:block overflow-x-auto transform-gpu">
-                            <table className="w-full text-left">
-                              <thead className="bg-slate-800/50 border-b border-slate-700">
-                                <tr>
-                                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                    Docente
-                                  </th>
-                                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                    Materias & Grupos
-                                  </th>
-                                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">
-                                    Estado
-                                  </th>
-                                  <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">
-                                    Acciones
-                                  </th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-800">
-                                {teachers.map((teacher) => (
-                                  <tr
-                                    key={teacher.id}
-                                    className="hover:bg-slate-800/30 transition-colors group"
-                                  >
-                                    <td className="px-8 py-6">
-                                      <div className="flex items-center gap-4">
-                                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-rose-500 to-indigo-900 flex items-center justify-center font-black text-xs text-white">
-                                          {teacher.name.split(" ")[1]?.charAt(0) || "T"}
-                                        </div>
-                                        <div>
-                                          <div className="font-bold text-slate-100">
-                                            {teacher.name}
+                              <div className="px-6 md:px-8 py-5 border-b border-slate-800 flex justify-between items-center bg-slate-800/30">
+                                <h4 className="text-xs font-black uppercase tracking-widest text-white italic">
+                                  Plantilla Docente
+                                </h4>
+                              </div>
+
+                              {/* Desktop Table View */}
+                              <div className="hidden md:block overflow-x-auto transform-gpu">
+                                <table className="w-full text-left">
+                                  <thead className="bg-slate-800/50 border-b border-slate-700">
+                                    <tr>
+                                      <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                        Docente
+                                      </th>
+                                      <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                        Materias & Grupos
+                                      </th>
+                                      <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">
+                                        Estado
+                                      </th>
+                                      <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">
+                                        Acciones
+                                      </th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-800">
+                                    {teachers.map((teacher) => (
+                                      <tr
+                                        key={teacher.id}
+                                        className="hover:bg-slate-800/30 transition-colors group"
+                                      >
+                                        <td className="px-8 py-6">
+                                          <div className="flex items-center gap-4">
+                                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-rose-500 to-indigo-900 flex items-center justify-center font-black text-xs text-white">
+                                              {teacher.name
+                                                .split(" ")[1]
+                                                ?.charAt(0) || "T"}
+                                            </div>
+                                            <div>
+                                              <div className="font-bold text-slate-100">
+                                                {teacher.name}
+                                              </div>
+                                              <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                                                {teacher.students} Alumnos
+                                                totales
+                                              </div>
+                                            </div>
                                           </div>
-                                          <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                                            {teacher.students} Alumnos totales
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </td>
-                                    <td className="px-8 py-6">
-                                      <div className="flex flex-wrap gap-1 items-center">
-                                        {renderCompactSubjects(teacher.subjects)}
-                                      </div>
-                                    </td>
-                                    <td className="px-8 py-6 text-center">
-                                      {(() => {
-                                        const isOnline = teacher.lastActive && (new Date().getTime() - new Date(teacher.lastActive).getTime() < 300000);
-                                        return (
-                                          <div className="flex flex-col items-center gap-1">
-                                            <span
-                                              className={cn(
-                                                "px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border",
-                                                isOnline
-                                                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-sm"
-                                                  : "bg-slate-800 text-slate-500 border-slate-700",
-                                              )}
-                                            >
-                                              {isOnline ? "En Línea" : "Desconectado"}
-                                            </span>
-                                            {teacher.lastActive && !isOnline && (
-                                              <span className="text-[8px] text-slate-600 font-bold uppercase truncate max-w-[80px]">
-                                                {new Date(teacher.lastActive).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                              </span>
+                                        </td>
+                                        <td className="px-8 py-6">
+                                          <div className="flex flex-wrap gap-1 items-center">
+                                            {renderCompactSubjects(
+                                              teacher.subjects,
                                             )}
                                           </div>
-                                        );
-                                      })()}
-                                    </td>
-                                    <td className="px-8 py-6 text-right">
-                                      <div className="flex items-center justify-end gap-2">
-                                        <button
-                                          onClick={() => {
-                                            const newName = prompt('Nuevo nombre:', teacher.name);
-                                            if (newName && newName.trim()) {
-                                              supabaseService.updateUserStats(teacher.id, { username: newName.trim() }).then(() => {
-                                                loadUsers();
-                                                toast.success("Nombre actualizado con éxito.");
-                                              }).catch(err => {
-                                                console.error(err);
-                                                toast.error("Error al actualizar nombre.");
-                                              });
-                                            }
-                                          }}
-                                          className="text-cyan-400 hover:text-cyan-300 font-bold p-2 bg-cyan-500/10 rounded-full transition-all border border-cyan-500/20"
-                                        >
-                                          <Pencil size={14} />
-                                        </button>
-                                        <button
-                                          onClick={() => {
-                                            setUserToDelete({ id: teacher.id, name: teacher.name, role: "Docente" });
-                                          }}
-                                          className="text-rose-400 hover:text-rose-300 font-bold p-2 bg-rose-500/10 rounded-full transition-all border border-rose-500/20"
-                                        >
-                                          <Trash2 size={14} />
-                                        </button>
-                                        <button
-                                          onClick={() =>
-                                            setAssignmentModal({
-                                              teacherId: teacher.id,
-                                              isOpen: true,
-                                              selectedGroups: teacher.groups || [],
-                                              selectedSubjects: teacher.subjects || [],
-                                              activeYear: "1",
-                                            })
-                                          }
-                                          className="inline-flex items-center justify-end gap-2 px-4 py-2 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-cyan-400 transition-colors border border-transparent hover:border-slate-700"
-                                        >
-                                          <UserCog size={14} />{" "}
-                                          <span className="text-[10px] font-black uppercase tracking-widest hidden lg:inline">
-                                            Asignar
-                                          </span>
-                                        </button>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-
-                          {/* Mobile List View */}
-                          <div className="md:hidden flex flex-col divide-y divide-slate-800">
-                            {teachers.map((teacher) => (
-                              <div key={teacher.id} className="p-4 flex flex-col gap-4">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-rose-500 to-indigo-900 flex items-center justify-center font-black text-sm text-white shrink-0">
-                                    {teacher.name.split(" ")[1]?.charAt(0) || "T"}
-                                  </div>
-                                  <div className="min-w-0 flex-1">
-                                    <h4 className="font-bold text-slate-100 truncate">{teacher.name}</h4>
-                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-0.5">{teacher.students} Alumnos</p>
-                                  </div>
-                                  <div className="flex flex-col items-end gap-1">
-                                    {(() => {
-                                        const isOnline = teacher.lastActive && (new Date().getTime() - new Date(teacher.lastActive).getTime() < 300000);
-                                        return (
-                                          <div className="flex items-center gap-1.5">
-                                            <div className={cn(
-                                              "w-1.5 h-1.5 rounded-full",
-                                              isOnline ? "bg-emerald-500 animate-pulse" : "bg-slate-700"
-                                            )} />
-                                            <span className="text-[8px] font-black uppercase text-slate-500 whitespace-nowrap">
-                                              {isOnline ? "En Línea" : "Offline"}
-                                            </span>
+                                        </td>
+                                        <td className="px-8 py-6 text-center">
+                                          {(() => {
+                                            const isOnline =
+                                              teacher.lastActive &&
+                                              new Date().getTime() -
+                                                new Date(
+                                                  teacher.lastActive,
+                                                ).getTime() <
+                                                300000;
+                                            return (
+                                              <div className="flex flex-col items-center gap-1">
+                                                <span
+                                                  className={cn(
+                                                    "px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border",
+                                                    isOnline
+                                                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-sm"
+                                                      : "bg-slate-800 text-slate-500 border-slate-700",
+                                                  )}
+                                                >
+                                                  {isOnline
+                                                    ? "En Línea"
+                                                    : "Desconectado"}
+                                                </span>
+                                                {teacher.lastActive &&
+                                                  !isOnline && (
+                                                    <span className="text-[8px] text-slate-600 font-bold uppercase truncate max-w-[80px]">
+                                                      {new Date(
+                                                        teacher.lastActive,
+                                                      ).toLocaleTimeString([], {
+                                                        hour: "2-digit",
+                                                        minute: "2-digit",
+                                                      })}
+                                                    </span>
+                                                  )}
+                                              </div>
+                                            );
+                                          })()}
+                                        </td>
+                                        <td className="px-8 py-6 text-right">
+                                          <div className="flex items-center justify-end gap-2">
+                                            <button
+                                              onClick={() => {
+                                                const newName = prompt(
+                                                  "Nuevo nombre:",
+                                                  teacher.name,
+                                                );
+                                                if (newName && newName.trim()) {
+                                                  supabaseService
+                                                    .updateUserStats(
+                                                      teacher.id,
+                                                      {
+                                                        username:
+                                                          newName.trim(),
+                                                      },
+                                                    )
+                                                    .then(() => {
+                                                      loadUsers();
+                                                      toast.success(
+                                                        "Nombre actualizado con éxito.",
+                                                      );
+                                                    })
+                                                    .catch((err) => {
+                                                      console.error(err);
+                                                      toast.error(
+                                                        "Error al actualizar nombre.",
+                                                      );
+                                                    });
+                                                }
+                                              }}
+                                              className="text-cyan-400 hover:text-cyan-300 font-bold p-2 bg-cyan-500/10 rounded-full transition-all border border-cyan-500/20"
+                                            >
+                                              <Pencil size={14} />
+                                            </button>
+                                            <button
+                                              onClick={() => {
+                                                setUserToDelete({
+                                                  id: teacher.id,
+                                                  name: teacher.name,
+                                                  role: "Docente",
+                                                });
+                                              }}
+                                              className="text-rose-400 hover:text-rose-300 font-bold p-2 bg-rose-500/10 rounded-full transition-all border border-rose-500/20"
+                                            >
+                                              <Trash2 size={14} />
+                                            </button>
+                                            <button
+                                              onClick={() =>
+                                                setAssignmentModal({
+                                                  teacherId: teacher.id,
+                                                  isOpen: true,
+                                                  selectedGroups:
+                                                    teacher.groups || [],
+                                                  selectedSubjects:
+                                                    teacher.subjects || [],
+                                                  activeYear: "1",
+                                                })
+                                              }
+                                              className="inline-flex items-center justify-end gap-2 px-4 py-2 hover:bg-slate-800 rounded-xl text-slate-400 hover:text-cyan-400 transition-colors border border-transparent hover:border-slate-700"
+                                            >
+                                              <UserCog size={14} />{" "}
+                                              <span className="text-[10px] font-black uppercase tracking-widest hidden lg:inline">
+                                                Asignar
+                                              </span>
+                                            </button>
                                           </div>
-                                        );
-                                      })()}
-                                  </div>
-                                </div>
-                                <div className="flex flex-wrap gap-1.5 pl-15">
-                                   {renderCompactSubjects(teacher.subjects)}
-                                </div>
-                                <div className="flex justify-end pt-2 border-t border-slate-800/50 mt-2 gap-2">
-                                  <button
-                                    onClick={() => {
-                                      const newName = prompt('Nuevo nombre:', teacher.name);
-                                      if (newName && newName.trim()) {
-                                        supabaseService.updateUserStats(teacher.id, { username: newName.trim() }).then(() => {
-                                          loadUsers();
-                                          toast.success("Nombre actualizado.");
-                                        }).catch(console.error);
-                                      }
-                                    }}
-                                    className="p-3 bg-indigo-500/10 text-indigo-400 rounded-xl border border-indigo-500/20"
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+
+                              {/* Mobile List View */}
+                              <div className="md:hidden flex flex-col divide-y divide-slate-800">
+                                {teachers.map((teacher) => (
+                                  <div
+                                    key={teacher.id}
+                                    className="p-4 flex flex-col gap-4"
                                   >
-                                    <Pencil size={14} />
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setUserToDelete({ id: teacher.id, name: teacher.name, role: "Docente" });
-                                    }}
-                                    className="p-3 bg-rose-500/10 text-rose-400 rounded-xl border border-rose-500/20"
-                                  >
-                                    <Trash2 size={14} />
-                                  </button>
-                                  <button
+                                    <div className="flex items-center gap-3">
+                                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-rose-500 to-indigo-900 flex items-center justify-center font-black text-sm text-white shrink-0">
+                                        {teacher.name
+                                          .split(" ")[1]
+                                          ?.charAt(0) || "T"}
+                                      </div>
+                                      <div className="min-w-0 flex-1">
+                                        <h4 className="font-bold text-slate-100 truncate">
+                                          {teacher.name}
+                                        </h4>
+                                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-0.5">
+                                          {teacher.students} Alumnos
+                                        </p>
+                                      </div>
+                                      <div className="flex flex-col items-end gap-1">
+                                        {(() => {
+                                          const isOnline =
+                                            teacher.lastActive &&
+                                            new Date().getTime() -
+                                              new Date(
+                                                teacher.lastActive,
+                                              ).getTime() <
+                                              300000;
+                                          return (
+                                            <div className="flex items-center gap-1.5">
+                                              <div
+                                                className={cn(
+                                                  "w-1.5 h-1.5 rounded-full",
+                                                  isOnline
+                                                    ? "bg-emerald-500 animate-pulse"
+                                                    : "bg-slate-700",
+                                                )}
+                                              />
+                                              <span className="text-[8px] font-black uppercase text-slate-500 whitespace-nowrap">
+                                                {isOnline
+                                                  ? "En Línea"
+                                                  : "Offline"}
+                                              </span>
+                                            </div>
+                                          );
+                                        })()}
+                                      </div>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5 pl-15">
+                                      {renderCompactSubjects(teacher.subjects)}
+                                    </div>
+                                    <div className="flex justify-end pt-2 border-t border-slate-800/50 mt-2 gap-2">
+                                      <button
+                                        onClick={() => {
+                                          const newName = prompt(
+                                            "Nuevo nombre:",
+                                            teacher.name,
+                                          );
+                                          if (newName && newName.trim()) {
+                                            supabaseService
+                                              .updateUserStats(teacher.id, {
+                                                username: newName.trim(),
+                                              })
+                                              .then(() => {
+                                                loadUsers();
+                                                toast.success(
+                                                  "Nombre actualizado.",
+                                                );
+                                              })
+                                              .catch(console.error);
+                                          }
+                                        }}
+                                        className="p-3 bg-indigo-500/10 text-indigo-400 rounded-xl border border-indigo-500/20"
+                                      >
+                                        <Pencil size={14} />
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          setUserToDelete({
+                                            id: teacher.id,
+                                            name: teacher.name,
+                                            role: "Docente",
+                                          });
+                                        }}
+                                        className="p-3 bg-rose-500/10 text-rose-400 rounded-xl border border-rose-500/20"
+                                      >
+                                        <Trash2 size={14} />
+                                      </button>
+                                      <button
                                         onClick={() =>
                                           setAssignmentModal({
                                             teacherId: teacher.id,
                                             isOpen: true,
-                                            selectedGroups: teacher.groups || [],
-                                            selectedSubjects: teacher.subjects || [],
+                                            selectedGroups:
+                                              teacher.groups || [],
+                                            selectedSubjects:
+                                              teacher.subjects || [],
                                             activeYear: "1",
                                           })
                                         }
@@ -3017,201 +3737,410 @@ export default function App() {
                                           Asignar a Grupos
                                         </span>
                                       </button>
-                                </div>
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
-                            ))}
+                            </div>
                           </div>
-                        </div>
-                          </div>
-                        ) : (
+                        ) : adminDashboardTab === "students" ? (
                           <div className="space-y-6">
                             <div className="flex justify-end">
-                              <button 
-                                onClick={() => setShowCreateUserModal({ isOpen: true, role: "Student" })}
-                                className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-cyan-600 hover:bg-cyan-500 rounded-2xl text-white font-black uppercase tracking-widest text-[10px] md:text-xs transition-all shadow-lg shadow-cyan-600/20 active:scale-95">
+                              <button
+                                onClick={() =>
+                                  setShowCreateUserModal({
+                                    isOpen: true,
+                                    role: "Student",
+                                  })
+                                }
+                                className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-cyan-600 hover:bg-cyan-500 rounded-2xl text-white font-black uppercase tracking-widest text-[10px] md:text-xs transition-all shadow-lg shadow-cyan-600/20 active:scale-95"
+                              >
                                 <Plus size={18} /> Nuevo Alumno
                               </button>
                             </div>
                             <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] overflow-hidden shadow-md">
-                               <div className="px-6 md:px-8 py-5 border-b border-slate-800 flex justify-between items-center bg-slate-800/30">
-                                   <h4 className="text-xs font-black uppercase tracking-widest text-white italic">Listado de Alumnos</h4>
-                               </div>
-                               <div className="overflow-x-auto transform-gpu pb-2">
-                                   {/* Desktop Table View */}
-                                   <table className="w-full text-left hidden md:table">
-                                      <thead className="bg-slate-800/50 border-b border-slate-700">
-                                        <tr>
-                                          <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Alumno</th>
-                                          <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Grado/Grupo</th>
-                                          <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Tokens</th>
-                                          <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Acciones</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-slate-800">
-                                          {allStudents.map(student => (
-                                              <tr key={student.username} className="hover:bg-slate-800/30 transition-colors group">
-                                                 <td className="px-8 py-6">
-                                                    <div className="flex items-center gap-3">
-                                                      {(() => {
-                                                         const isOnline = student.lastActive && (new Date().getTime() - new Date(student.lastActive).getTime() < 300000);
-                                                         return (
-                                                           <div className={cn(
-                                                             "w-2 h-2 rounded-full shrink-0",
-                                                             isOnline ? "bg-emerald-500 animate-pulse" : "bg-slate-700"
-                                                           )} />
-                                                         );
-                                                      })()}
-                                                      <span className="text-sm font-bold text-slate-200">{student.username}</span>
-                                                    </div>
-                                                 </td>
-                                                 <td className="px-8 py-6 text-sm text-indigo-400 font-bold uppercase">{student.grade}</td>
-                                                 <td className="px-8 py-6 text-sm text-amber-500 font-black flex items-center gap-1.5"><Coins size={14} className="text-amber-500"/> {student.tokens}</td>
-                                                 <td className="px-8 py-6 text-right">
-                                                   <div className="flex items-center justify-end gap-2">
-                                                       <button
-                                                          onClick={() => {
-                                                             const action = prompt(`Editar datos de ${student.username}:\n1. Editar Nombre\n2. Editar Grupo\n3. Editar Tokens\nIngresa 1, 2 o 3:`);
-                                                             if (action === '1') {
-                                                                const newName = prompt('Nuevo nombre:', student.username);
-                                                                if (newName && newName.trim() && student.id) {
-                                                                   supabaseService.updateUserStats(student.id, { username: newName.trim() }).then(() => {
-                                                                      loadUsers();
-                                                                      toast.success("Nombre actualizado.");
-                                                                   }).catch(console.error);
-                                                                }
-                                                             } else if (action === '2') {
-                                                                const newGrp = prompt('Nuevo grupo (ej. 2A):', student.grade);
-                                                                if (newGrp && newGrp.trim() && student.id) {
-                                                                   supabaseService.updateUserStats(student.id, { grade: newGrp.trim() as any }).then(() => {
-                                                                      loadUsers();
-                                                                      toast.success("Grupo actualizado.");
-                                                                   }).catch(console.error);
-                                                                }
-                                                             } else if (action === '3') {
-                                                                const newTokens = prompt('Nuevos tokens:', String(student.tokens));
-                                                                if (newTokens !== null && !isNaN(parseInt(newTokens)) && student.id) {
-                                                                   supabaseService.updateUserStats(student.id, { tokens: parseInt(newTokens) }).then(() => {
-                                                                      loadUsers();
-                                                                      toast.success("Tokens actualizados.");
-                                                                   }).catch(console.error);
-                                                                }
-                                                             }
-                                                          }}
-                                                          className="text-indigo-400 hover:text-indigo-300 font-bold p-2 bg-indigo-500/10 rounded-full transition-all border border-indigo-500/20"
-                                                       >
-                                                          <Pencil size={16} />
-                                                       </button>
-                                                     <button
-                                                        onClick={() => {
-                                                          if (student.id) {
-                                                            setUserToDelete({ id: student.id, name: student.username, role: "Alumno" });
-                                                          }
-                                                        }}
-                                                        className="text-rose-400 hover:text-rose-300 font-bold p-2 bg-rose-500/10 rounded-full transition-all border border-rose-500/20"
-                                                     >
-                                                        <Trash2 size={16} />
-                                                     </button>
-                                                   </div>
-                                                 </td>
-                                              </tr>
-                                          ))}
-                                      </tbody>
-                                   </table>
-
-                                   {/* Mobile Card View */}
-                                   <div className="md:hidden divide-y divide-slate-800">
-                                      {allStudents.map(student => (
-                                        <div key={student.username} className="p-5 space-y-4">
-                                          <div className="flex justify-between items-start">
-                                            <div>
-                                              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Alumno</p>
-                                              <div className="flex items-center gap-2">
-                                                <p className="text-sm font-bold text-slate-200">{student.username}</p>
-                                                {(() => {
-                                                   const isOnline = student.lastActive && (new Date().getTime() - new Date(student.lastActive).getTime() < 300000);
-                                                   return (
-                                                     <div className={cn(
-                                                       "w-1.5 h-1.5 rounded-full shrink-0 mt-0.5",
-                                                       isOnline ? "bg-emerald-500 animate-pulse" : "bg-slate-700"
-                                                     )} />
-                                                   );
-                                                })()}
-                                              </div>
-                                            </div>
-                                            <div className="text-right">
-                                              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Grado/Grupo</p>
-                                              <p className="text-sm text-indigo-400 font-black uppercase">{student.grade}</p>
-                                            </div>
+                              <div className="px-6 md:px-8 py-5 border-b border-slate-800 flex justify-between items-center bg-slate-800/30">
+                                <h4 className="text-xs font-black uppercase tracking-widest text-white italic">
+                                  Listado de Alumnos
+                                </h4>
+                              </div>
+                              <div className="overflow-x-auto transform-gpu pb-2">
+                                {/* Desktop Table View */}
+                                <table className="w-full text-left hidden md:table">
+                                  <thead className="bg-slate-800/50 border-b border-slate-700">
+                                    <tr>
+                                      <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                        Alumno
+                                      </th>
+                                      <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                        Grado/Grupo
+                                      </th>
+                                      <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                        Tokens
+                                      </th>
+                                      <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">
+                                        Acciones
+                                      </th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-800">
+                                    {allStudents.map((student, i) => (
+                                      <tr
+                                        key={
+                                          student.id ||
+                                          `student-desk-${student.username || i}`
+                                        }
+                                        className="hover:bg-slate-800/30 transition-colors group"
+                                      >
+                                        <td className="px-8 py-6">
+                                          <div className="flex items-center gap-3">
+                                            {(() => {
+                                              const isOnline =
+                                                student.lastActive &&
+                                                new Date().getTime() -
+                                                  new Date(
+                                                    student.lastActive,
+                                                  ).getTime() <
+                                                  300000;
+                                              return (
+                                                <div
+                                                  className={cn(
+                                                    "w-2 h-2 rounded-full shrink-0",
+                                                    isOnline
+                                                      ? "bg-emerald-500 animate-pulse"
+                                                      : "bg-slate-700",
+                                                  )}
+                                                />
+                                              );
+                                            })()}
+                                            <span className="text-sm font-bold text-slate-200">
+                                              {student.username}
+                                            </span>
                                           </div>
-                                          
-                                          <div className="flex items-center justify-between bg-slate-950/30 p-4 rounded-2xl border border-slate-800/50">
-                                            <div className="flex items-center gap-3">
-                                              <div className="p-2 bg-amber-500/10 rounded-xl">
-                                                <Coins size={18} className="text-amber-500" />
-                                              </div>
-                                              <div>
-                                                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">Tokens</p>
-                                                <p className="text-lg text-amber-500 font-black leading-none">{student.tokens}</p>
-                                              </div>
-                                                        <div className="flex items-center gap-2">
-                                              <button
-                                                onClick={() => {
-                                                  const action = prompt(`Editar datos de ${student.username}:\n1. Editar Nombre\n2. Editar Grupo\n3. Editar Tokens\nIngresa 1, 2 o 3:`);
-                                                  if (action === '1') {
-                                                    const newName = prompt('Nuevo nombre:', student.username);
-                                                    if (newName && newName.trim() && student.id) {
-                                                      supabaseService.updateUserStats(student.id, { username: newName.trim() }).then(() => {
+                                        </td>
+                                        <td className="px-8 py-6 text-sm text-indigo-400 font-bold uppercase">
+                                          {student.grade}
+                                        </td>
+                                        <td className="px-8 py-6 text-sm text-amber-500 font-black flex items-center gap-1.5">
+                                          <Coins
+                                            size={14}
+                                            className="text-amber-500"
+                                          />{" "}
+                                          {student.tokens}
+                                        </td>
+                                        <td className="px-8 py-6 text-right">
+                                          <div className="flex items-center justify-end gap-2">
+                                            <button
+                                              onClick={() => {
+                                                const action = prompt(
+                                                  `Editar datos de ${student.username}:\n1. Editar Nombre\n2. Editar Grupo\n3. Editar Tokens\nIngresa 1, 2 o 3:`,
+                                                );
+                                                if (action === "1") {
+                                                  const newName = prompt(
+                                                    "Nuevo nombre:",
+                                                    student.username,
+                                                  );
+                                                  if (
+                                                    newName &&
+                                                    newName.trim() &&
+                                                    student.id
+                                                  ) {
+                                                    supabaseService
+                                                      .updateUserStats(
+                                                        student.id,
+                                                        {
+                                                          username:
+                                                            newName.trim(),
+                                                        },
+                                                      )
+                                                      .then(() => {
                                                         loadUsers();
-                                                        toast.success("Nombre actualizado.");
-                                                      }).catch(console.error);
-                                                    }
-                                                  } else if (action === '2') {
-                                                    const newGrp = prompt('Nuevo grupo (ej. 2A):', student.grade);
-                                                    if (newGrp && newGrp.trim() && student.id) {
-                                                      supabaseService.updateUserStats(student.id, { grade: newGrp.trim() as any }).then(() => {
-                                                        loadUsers();
-                                                        toast.success("Grupo actualizado.");
-                                                      }).catch(console.error);
-                                                    }
-                                                  } else if (action === '3') {
-                                                    const newTokens = prompt('Nuevos tokens:', String(student.tokens));
-                                                    if (newTokens !== null && !isNaN(parseInt(newTokens)) && student.id) {
-                                                      supabaseService.updateUserStats(student.id, { tokens: parseInt(newTokens) }).then(() => {
-                                                        loadUsers();
-                                                        toast.success("Tokens actualizados.");
-                                                      }).catch(console.error);
-                                                    }
+                                                        toast.success(
+                                                          "Nombre actualizado.",
+                                                        );
+                                                      })
+                                                      .catch(console.error);
                                                   }
-                                                }}
-                                                className="text-indigo-400 hover:text-indigo-300 font-bold p-2.5 bg-indigo-500/10 rounded-xl transition-all border border-indigo-500/20"
-                                              >
-                                                <Pencil size={18} />
-                                              </button>
-                                              <button
-                                                onClick={() => {
-                                                  if (student.id) {
-                                                    setUserToDelete({ id: student.id, name: student.username, role: "Alumno" });
+                                                } else if (action === "2") {
+                                                  const newGrp = prompt(
+                                                    "Nuevo grupo (ej. 2A):",
+                                                    student.grade,
+                                                  );
+                                                  if (
+                                                    newGrp &&
+                                                    newGrp.trim() &&
+                                                    student.id
+                                                  ) {
+                                                    supabaseService
+                                                      .updateUserStats(
+                                                        student.id,
+                                                        {
+                                                          grade:
+                                                            newGrp.trim() as any,
+                                                        },
+                                                      )
+                                                      .then(() => {
+                                                        loadUsers();
+                                                        toast.success(
+                                                          "Grupo actualizado.",
+                                                        );
+                                                      })
+                                                      .catch(console.error);
                                                   }
-                                                }}
-                                                className="text-rose-400 hover:text-rose-300 font-bold p-2.5 bg-rose-500/10 rounded-xl transition-all border border-rose-500/20"
-                                              >
-                                                <Trash2 size={18} />
-                                              </button>
-                                            </div>
-                                            </div>
+                                                } else if (action === "3") {
+                                                  const newTokens = prompt(
+                                                    "Nuevos tokens:",
+                                                    String(student.tokens),
+                                                  );
+                                                  if (
+                                                    newTokens !== null &&
+                                                    !isNaN(
+                                                      parseInt(newTokens),
+                                                    ) &&
+                                                    student.id
+                                                  ) {
+                                                    supabaseService
+                                                      .updateUserStats(
+                                                        student.id,
+                                                        {
+                                                          tokens:
+                                                            parseInt(newTokens),
+                                                        },
+                                                      )
+                                                      .then(() => {
+                                                        loadUsers();
+                                                        toast.success(
+                                                          "Tokens actualizados.",
+                                                        );
+                                                      })
+                                                      .catch(console.error);
+                                                  }
+                                                }
+                                              }}
+                                              className="text-indigo-400 hover:text-indigo-300 font-bold p-2 bg-indigo-500/10 rounded-full transition-all border border-indigo-500/20"
+                                            >
+                                              <Pencil size={16} />
+                                            </button>
+                                            <button
+                                              onClick={() => {
+                                                if (student.id) {
+                                                  setUserToDelete({
+                                                    id: student.id,
+                                                    name: student.username,
+                                                    role: "Alumno",
+                                                  });
+                                                }
+                                              }}
+                                              className="text-rose-400 hover:text-rose-300 font-bold p-2 bg-rose-500/10 rounded-full transition-all border border-rose-500/20"
+                                            >
+                                              <Trash2 size={16} />
+                                            </button>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+
+                                {/* Mobile Card View */}
+                                <div className="md:hidden divide-y divide-slate-800">
+                                  {allStudents.map((student, i) => (
+                                    <div
+                                      key={
+                                        student.id ||
+                                        `student-mobile-${student.username || i}`
+                                      }
+                                      className="p-5 space-y-4"
+                                    >
+                                      <div className="flex justify-between items-start">
+                                        <div>
+                                          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">
+                                            Alumno
+                                          </p>
+                                          <div className="flex items-center gap-2">
+                                            <p className="text-sm font-bold text-slate-200">
+                                              {student.username}
+                                            </p>
+                                            {(() => {
+                                              const isOnline =
+                                                student.lastActive &&
+                                                new Date().getTime() -
+                                                  new Date(
+                                                    student.lastActive,
+                                                  ).getTime() <
+                                                  300000;
+                                              return (
+                                                <div
+                                                  className={cn(
+                                                    "w-1.5 h-1.5 rounded-full shrink-0 mt-0.5",
+                                                    isOnline
+                                                      ? "bg-emerald-500 animate-pulse"
+                                                      : "bg-slate-700",
+                                                  )}
+                                                />
+                                              );
+                                            })()}
                                           </div>
                                         </div>
-                                      ))}
-                                   </div>
+                                        <div className="text-right">
+                                          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">
+                                            Grado/Grupo
+                                          </p>
+                                          <p className="text-sm text-indigo-400 font-black uppercase">
+                                            {student.grade}
+                                          </p>
+                                        </div>
+                                      </div>
 
-                                   {allStudents.length === 0 && (
-                                       <div className="px-8 py-12 text-center text-slate-500 font-bold uppercase tracking-widest text-[10px]">
-                                          No hay alumnos registrados aún.
-                                       </div>
-                                   )}
-                               </div>
+                                      <div className="flex items-center justify-between bg-slate-950/30 p-4 rounded-2xl border border-slate-800/50">
+                                        <div className="flex items-center gap-3">
+                                          <div className="p-2 bg-amber-500/10 rounded-xl">
+                                            <Coins
+                                              size={18}
+                                              className="text-amber-500"
+                                            />
+                                          </div>
+                                          <div>
+                                            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">
+                                              Tokens
+                                            </p>
+                                            <p className="text-lg text-amber-500 font-black leading-none">
+                                              {student.tokens}
+                                            </p>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <button
+                                              onClick={() => {
+                                                const action = prompt(
+                                                  `Editar datos de ${student.username}:\n1. Editar Nombre\n2. Editar Grupo\n3. Editar Tokens\nIngresa 1, 2 o 3:`,
+                                                );
+                                                if (action === "1") {
+                                                  const newName = prompt(
+                                                    "Nuevo nombre:",
+                                                    student.username,
+                                                  );
+                                                  if (
+                                                    newName &&
+                                                    newName.trim() &&
+                                                    student.id
+                                                  ) {
+                                                    supabaseService
+                                                      .updateUserStats(
+                                                        student.id,
+                                                        {
+                                                          username:
+                                                            newName.trim(),
+                                                        },
+                                                      )
+                                                      .then(() => {
+                                                        loadUsers();
+                                                        toast.success(
+                                                          "Nombre actualizado.",
+                                                        );
+                                                      })
+                                                      .catch(console.error);
+                                                  }
+                                                } else if (action === "2") {
+                                                  const newGrp = prompt(
+                                                    "Nuevo grupo (ej. 2A):",
+                                                    student.grade,
+                                                  );
+                                                  if (
+                                                    newGrp &&
+                                                    newGrp.trim() &&
+                                                    student.id
+                                                  ) {
+                                                    supabaseService
+                                                      .updateUserStats(
+                                                        student.id,
+                                                        {
+                                                          grade:
+                                                            newGrp.trim() as any,
+                                                        },
+                                                      )
+                                                      .then(() => {
+                                                        loadUsers();
+                                                        toast.success(
+                                                          "Grupo actualizado.",
+                                                        );
+                                                      })
+                                                      .catch(console.error);
+                                                  }
+                                                } else if (action === "3") {
+                                                  const newTokens = prompt(
+                                                    "Nuevos tokens:",
+                                                    String(student.tokens),
+                                                  );
+                                                  if (
+                                                    newTokens !== null &&
+                                                    !isNaN(
+                                                      parseInt(newTokens),
+                                                    ) &&
+                                                    student.id
+                                                  ) {
+                                                    supabaseService
+                                                      .updateUserStats(
+                                                        student.id,
+                                                        {
+                                                          tokens:
+                                                            parseInt(newTokens),
+                                                        },
+                                                      )
+                                                      .then(() => {
+                                                        loadUsers();
+                                                        toast.success(
+                                                          "Tokens actualizados.",
+                                                        );
+                                                      })
+                                                      .catch(console.error);
+                                                  }
+                                                }
+                                              }}
+                                              className="text-indigo-400 hover:text-indigo-300 font-bold p-2.5 bg-indigo-500/10 rounded-xl transition-all border border-indigo-500/20"
+                                            >
+                                              <Pencil size={18} />
+                                            </button>
+                                            <button
+                                              onClick={() => {
+                                                if (student.id) {
+                                                  setUserToDelete({
+                                                    id: student.id,
+                                                    name: student.username,
+                                                    role: "Alumno",
+                                                  });
+                                                }
+                                              }}
+                                              className="text-rose-400 hover:text-rose-300 font-bold p-2.5 bg-rose-500/10 rounded-xl transition-all border border-rose-500/20"
+                                            >
+                                              <Trash2 size={18} />
+                                            </button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+
+                                {allStudents.length === 0 && (
+                                  <div className="px-8 py-12 text-center text-slate-500 font-bold uppercase tracking-widest text-[10px]">
+                                    No hay alumnos registrados aún.
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
+                        ) : adminDashboardTab === "avatars" ? (
+                          <AdminAvatarApprovals
+                            students={rawStudents}
+                            onRefresh={loadUsers}
+                          />
+                        ) : (
+                          <AdminDashboardPendientes
+                            rawStudents={rawStudents}
+                            onRefresh={loadUsers}
+                            lookupTaskDetails={lookupTaskDetails}
+                            notifications={notifications}
+                          />
                         )}
                       </div>
                     ) : stats.role === "Teacher" ? (
@@ -3219,66 +4148,115 @@ export default function App() {
                       <div className="space-y-6 pb-2">
                         {(() => {
                           // 1. Students under teacher's charge
-                          const teacherStudents = globalStudents.filter(s => {
-                            return (stats.assignedSubjects || []).some(sub => sub.split(":")[1] === s.grade) || 
-                                   (stats.assignedGroups || []).includes(s.grade);
+                          const teacherStudents = globalStudents.filter((s) => {
+                            return (
+                              (stats.assignedSubjects || []).some(
+                                (sub) => sub.split(":")[1] === s.grade,
+                              ) ||
+                              (stats.assignedGroups || []).includes(s.grade)
+                            );
                           });
 
                           const totalStudentsCount = teacherStudents.length;
 
                           // 2. Total resolved missions (completed tasks) of assigned students
-                          const totalCompletedTasks = teacherStudents.reduce((acc, curr) => acc + (curr.completedTasks || []).length, 0);
+                          const totalCompletedTasks = teacherStudents.reduce(
+                            (acc, curr) =>
+                              acc + (curr.completedTasks || []).length,
+                            0,
+                          );
 
                           // 3. Accumulated tokens of assigned students
-                          const totalStudentTokens = teacherStudents.reduce((acc, curr) => acc + (curr.tokens || 0), 0);
+                          const totalStudentTokens = teacherStudents.reduce(
+                            (acc, curr) => acc + (curr.tokens || 0),
+                            0,
+                          );
 
                           // 4. Activity Review Inbox (Pending submissions)
-                          const reviewInboxItems = teacherStudents.flatMap(student => {
-                            const relevantPendingTasks = (student.pendingTasks || []).filter(taskId => {
-                              for (const year in enrichedAcademicContent) {
-                                for (const subject of enrichedAcademicContent[year as Year]) {
-                                  if (subject.topics.some(t => t.tasks.some(task => task.id === taskId))) {
-                                    return stats.assignedSubjects.includes(`${subject.id}:${student.grade}`) || 
-                                           (stats.assignedSubjects.includes(subject.id) && student.grade.startsWith(year));
+                          const reviewInboxItems = teacherStudents.flatMap(
+                            (student) => {
+                              const relevantPendingTasks = (
+                                student.pendingTasks || []
+                              ).filter((taskId) => {
+                                for (const year in enrichedAcademicContent) {
+                                  for (const subject of enrichedAcademicContent[
+                                    year as Year
+                                  ]) {
+                                    if (
+                                      subject.topics.some((t) =>
+                                        t.tasks.some(
+                                          (task) => task.id === taskId,
+                                        ),
+                                      )
+                                    ) {
+                                      return (
+                                        stats.assignedSubjects.includes(
+                                          `${subject.id}:${student.grade}`,
+                                        ) ||
+                                        (stats.assignedSubjects.includes(
+                                          subject.id,
+                                        ) &&
+                                          student.grade.startsWith(year))
+                                      );
+                                    }
                                   }
                                 }
-                              }
-                              return false;
-                            });
+                                return false;
+                              });
 
-                            return relevantPendingTasks.map(taskId => {
-                              const taskDetails = Object.values(enrichedAcademicContent)
-                                .flat()
-                                .flatMap(s => s.topics)
-                                .flatMap(t => t.tasks)
-                                .find(t => t.id === taskId);
-                              return {
-                                student,
-                                taskId,
-                                taskDetails,
-                              };
-                            }).filter(item => item.taskDetails !== undefined);
-                          });
+                              return relevantPendingTasks
+                                .map((taskId) => {
+                                  const taskDetails = Object.values(
+                                    enrichedAcademicContent,
+                                  )
+                                    .flat()
+                                    .flatMap((s) => s.topics)
+                                    .flatMap((t) => t.tasks)
+                                    .find((t) => t.id === taskId);
+                                  return {
+                                    student,
+                                    taskId,
+                                    taskDetails,
+                                  };
+                                })
+                                .filter(
+                                  (item) => item.taskDetails !== undefined,
+                                );
+                            },
+                          );
 
                           const totalPendingReviews = reviewInboxItems.length;
 
                           // 5. Completion Efficiency Rate
-                          const totalMissions = totalCompletedTasks + totalPendingReviews;
-                          const groupEfficiency = totalMissions > 0 
-                            ? Math.round((totalCompletedTasks / totalMissions) * 100) 
-                            : 100;
+                          const totalMissions =
+                            totalCompletedTasks + totalPendingReviews;
+                          const groupEfficiency =
+                            totalMissions > 0
+                              ? Math.round(
+                                  (totalCompletedTasks / totalMissions) * 100,
+                                )
+                              : 100;
 
                           // 6. Leaderboard (Destacados)
                           // If teacher has assigned students, prioritize them. Else, fall back to global leaderboard as demonstration so it looks gorgeous!
-                          const leaderboardSource = teacherStudents.length > 0 ? teacherStudents : globalStudents;
+                          const leaderboardSource =
+                            teacherStudents.length > 0
+                              ? teacherStudents
+                              : globalStudents;
                           const topStudents = [...leaderboardSource]
                             .sort((a, b) => b.tokens - a.tokens)
                             .slice(0, 3);
 
                           // 7. Active Review Item
-                          const activeReviewItem = reviewInboxItems.find(
-                            item => item.student.id === selectedReviewItem?.studentId && item.taskId === selectedReviewItem?.taskId
-                          ) || reviewInboxItems[0] || null;
+                          const activeReviewItem =
+                            reviewInboxItems.find(
+                              (item) =>
+                                item.student.id ===
+                                  selectedReviewItem?.studentId &&
+                                item.taskId === selectedReviewItem?.taskId,
+                            ) ||
+                            reviewInboxItems[0] ||
+                            null;
 
                           return (
                             <div className="space-y-6 md:space-y-8">
@@ -3286,416 +4264,588 @@ export default function App() {
                               <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 text-left bg-slate-900/40 border border-slate-800/80 p-5 md:p-6 rounded-3xl relative overflow-hidden">
                                 <div className="absolute top-0 right-0 w-80 h-80 bg-gradient-to-br from-indigo-500/5 to-transparent blur-3xl rounded-full pointer-events-none" />
                                 <div className="space-y-2 relative z-10 w-full min-w-0">
-
                                   <h2 className="text-3xl md:text-5xl font-black italic uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-indigo-200 via-indigo-400 to-cyan-400 break-words leading-tight">
                                     {stats.username}
                                   </h2>
                                   <p className="text-slate-400 font-bold uppercase tracking-[0.15em] text-[10px]">
-                                    {stats.assignedGroups && stats.assignedGroups.length > 0 
+                                    {stats.assignedGroups &&
+                                    stats.assignedGroups.length > 0
                                       ? `Grupos asignados: ${stats.assignedGroups.join(", ")}`
-                                      : "Grupos asignados: Ninguno"
-                                    }
+                                      : "Grupos asignados: Ninguno"}
                                   </p>
                                 </div>
-
                               </div>
-
-
 
                               {/* COCKPIT GRID: Left (Review Desk) and Right (Metrics & Leaderboard) */}
                               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-                                
                                 {/* Left Side: Bandeja de Evaluación (Modern Review Desk) */}
                                 <div className="lg:col-span-8 space-y-4">
                                   <div className="text-left flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-1">
                                     <div>
-                                      <h3 id="bandeja-seccion" className="text-xs font-black uppercase text-indigo-400 tracking-[0.2em] font-sans">
+                                      <h3
+                                        id="bandeja-seccion"
+                                        className="text-xs font-black uppercase text-indigo-400 tracking-[0.2em] font-sans"
+                                      >
                                         Bandeja de Actividades Enviadas
                                       </h3>
                                     </div>
-                                  <span className="px-3.5 py-1.5 bg-slate-900 border border-slate-800 text-slate-400 font-mono text-[9px] font-black rounded-full shadow-sm shrink-0">
-                                    INBOX • {totalPendingReviews} ENTREGAS POR CALIFICAR
-                                  </span>
-                                </div>
-
-                                {totalPendingReviews === 0 ? (
-                                  <div className="bg-slate-900/20 border border-slate-800 p-6 md:p-8 rounded-3xl flex flex-col items-center justify-center text-center gap-4 max-w-full relative overflow-hidden">
-                                    <div className="absolute inset-0 bg-radial-gradient(circle, rgba(99,102,241,0.03)_10%, transparent_10%) bg-[size:20px_20px] pointer-events-none" />
-                                    <div className="p-4 bg-slate-950 rounded-[2rem] border border-slate-800/80 text-slate-600">
-                                      <CheckCircle2 size={40} className="text-emerald-500/60" />
-                                    </div>
-                                    <div className="space-y-1 relative z-10 text-center">
-                                      <h4 className="text-sm font-extrabold uppercase text-slate-300 tracking-wider">¡Todo el trabajo calificado!</h4>
-                                      <p className="text-xs text-slate-500 max-w-md mx-auto">No tienes evaluaciones pendientes en este momento. ¡Tus estudiantes están al día!</p>
-                                    </div>
+                                    <span className="px-3.5 py-1.5 bg-slate-900 border border-slate-800 text-slate-400 font-mono text-[9px] font-black rounded-full shadow-sm shrink-0">
+                                      INBOX • {totalPendingReviews} ENTREGAS POR
+                                      CALIFICAR
+                                    </span>
                                   </div>
-                                ) : (
-                                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 bg-slate-950/20 border border-slate-800/80 p-4 lg:p-6 rounded-3xl overflow-hidden text-left">
-                                    
-                                    {/* Left Side: Submissions list */}
-                                    <div className="lg:col-span-5 flex flex-col gap-3 max-h-[500px] overflow-y-auto pr-1 no-scrollbar border-b lg:border-b-0 lg:border-r border-slate-800/50 pb-4 lg:pb-0 lg:pr-6">
-                                      <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-widest pl-1">Entregas Recientes</span>
-                                      
-                                      {reviewInboxItems.map((item) => {
-                                        const isSelected = activeReviewItem?.student.id === item.student.id && activeReviewItem?.taskId === item.taskId;
-                                        const taskDetails = item.taskDetails;
-                                        
-                                        return (
-                                          <button
-                                            key={`${item.student.id}-${item.taskId}`}
-                                            onClick={() => {
-                                              setSelectedReviewItem({ studentId: item.student.id, taskId: item.taskId });
-                                              setTeacherFeedbackComment("");
-                                            }}
-                                            className={cn(
-                                              "w-full p-4 rounded-2xl flex items-start gap-3 transition-all duration-300 border text-left",
-                                              isSelected 
-                                                ? "bg-slate-900 border-indigo-500/40 shadow-lg shadow-indigo-500/5" 
-                                                : "bg-slate-955 bg-slate-950/80 hover:bg-slate-900 border-slate-800/80 hover:border-slate-700"
-                                            )}
-                                          >
-                                            <img 
-                                              src={item.student.avatar} 
-                                              alt={item.student.name}
-                                              className="w-9 h-9 rounded-full border border-slate-800 bg-slate-900 p-0.5 shrink-0" 
-                                              referrerPolicy="no-referrer"
-                                            />
-                                            <div className="flex-1 min-w-0">
-                                              <div className="flex items-center justify-between gap-2">
-                                                <span className="font-bold text-slate-200 text-xs truncate uppercase tracking-wider">
-                                                  {item.student.name}
-                                                </span>
-                                                <span className="shrink-0 px-2 py-0.5 bg-slate-900 text-slate-400 font-mono text-[8.5px] font-black rounded-lg uppercase border border-slate-800">
-                                                  {item.student.grade}
-                                                </span>
-                                              </div>
-                                              
-                                              <p className="text-[11px] text-slate-300 font-bold truncate italic mt-1 pb-1">
-                                                {taskDetails?.title}
-                                              </p>
-                                              
-                                              <div className="flex items-center gap-1.5 mt-1">
-                                                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
-                                                <span className="text-[8px] text-indigo-400 uppercase font-bold tracking-widest leading-none">
-                                                  Espera revisión
-                                                </span>
-                                              </div>
-                                            </div>
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
 
-                                    {/* Right Side: Active Workspace */}
-                                    <div className="lg:col-span-7 flex flex-col justify-between min-h-[440px] lg:pl-2">
-                                      {activeReviewItem ? (
-                                        <div className="flex flex-col h-full justify-between gap-6">
-                                          
-                                          {/* Sub-Header */}
-                                          <div className="flex items-start justify-between border-b border-slate-800 pb-4">
-                                            <div className="flex items-center gap-3">
-                                              <img 
-                                                src={activeReviewItem.student.avatar} 
-                                                alt={activeReviewItem.student.name}
-                                                className="w-12 h-12 rounded-full border-2 border-slate-800 bg-slate-900 p-0.5 shrink-0" 
+                                  {totalPendingReviews === 0 ? (
+                                    <div className="bg-slate-900/20 border border-slate-800 p-6 md:p-8 rounded-3xl flex flex-col items-center justify-center text-center gap-4 max-w-full relative overflow-hidden">
+                                      <div className="absolute inset-0 bg-radial-gradient(circle, rgba(99,102,241,0.03)_10%, transparent_10%) bg-[size:20px_20px] pointer-events-none" />
+                                      <div className="p-4 bg-slate-950 rounded-[2rem] border border-slate-800/80 text-slate-600">
+                                        <CheckCircle2
+                                          size={40}
+                                          className="text-emerald-500/60"
+                                        />
+                                      </div>
+                                      <div className="space-y-1 relative z-10 text-center">
+                                        <h4 className="text-sm font-extrabold uppercase text-slate-300 tracking-wider">
+                                          ¡Todo el trabajo calificado!
+                                        </h4>
+                                        <p className="text-xs text-slate-500 max-w-md mx-auto">
+                                          No tienes evaluaciones pendientes en
+                                          este momento. ¡Tus estudiantes están
+                                          al día!
+                                        </p>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 bg-slate-950/20 border border-slate-800/80 p-4 lg:p-6 rounded-3xl overflow-hidden text-left">
+                                      {/* Left Side: Submissions list */}
+                                      <div className="lg:col-span-5 flex flex-col gap-3 max-h-[500px] overflow-y-auto pr-1 no-scrollbar border-b lg:border-b-0 lg:border-r border-slate-800/50 pb-4 lg:pb-0 lg:pr-6">
+                                        <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-widest pl-1">
+                                          Entregas Recientes
+                                        </span>
+
+                                        {reviewInboxItems.map((item) => {
+                                          const isSelected =
+                                            activeReviewItem?.student.id ===
+                                              item.student.id &&
+                                            activeReviewItem?.taskId ===
+                                              item.taskId;
+                                          const taskDetails = item.taskDetails;
+
+                                          return (
+                                            <button
+                                              key={`${item.student.id}-${item.taskId}`}
+                                              onClick={() => {
+                                                setSelectedReviewItem({
+                                                  studentId: item.student.id,
+                                                  taskId: item.taskId,
+                                                });
+                                                setTeacherFeedbackComment("");
+                                              }}
+                                              className={cn(
+                                                "w-full p-4 rounded-2xl flex items-start gap-3 transition-all duration-300 border text-left",
+                                                isSelected
+                                                  ? "bg-slate-900 border-indigo-500/40 shadow-lg shadow-indigo-500/5"
+                                                  : "bg-slate-955 bg-slate-950/80 hover:bg-slate-900 border-slate-800/80 hover:border-slate-700",
+                                              )}
+                                            >
+                                              <img
+                                                src={item.student.avatar}
+                                                alt={item.student.name}
+                                                className="w-9 h-9 rounded-full border border-slate-800 bg-slate-900 p-0.5 shrink-0"
                                                 referrerPolicy="no-referrer"
                                               />
-                                              <div>
-                                                <div className="flex items-center gap-2">
-                                                  <h4 className="font-black text-white text-base uppercase tracking-wider">
-                                                    {activeReviewItem.student.name}
-                                                  </h4>
-                                                  <span className="px-2.5 py-0.5 bg-indigo-600/15 border border-indigo-500/20 text-indigo-400 font-mono text-[9px] font-black rounded-full uppercase tracking-wider">
-                                                    {activeReviewItem.student.grade}
+                                              <div className="flex-1 min-w-0">
+                                                <div className="flex items-center justify-between gap-2">
+                                                  <span className="font-bold text-slate-200 text-xs truncate uppercase tracking-wider">
+                                                    {item.student.name}
+                                                  </span>
+                                                  <span className="shrink-0 px-2 py-0.5 bg-slate-900 text-slate-400 font-mono text-[8.5px] font-black rounded-lg uppercase border border-slate-800">
+                                                    {item.student.grade}
                                                   </span>
                                                 </div>
-                                                <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-widest mt-1">
-                                                  Alumno Evaluando • Solicitó Evaluación Directa
+
+                                                <p className="text-[11px] text-slate-300 font-bold truncate italic mt-1 pb-1">
+                                                  {taskDetails?.title}
+                                                </p>
+
+                                                <div className="flex items-center gap-1.5 mt-1">
+                                                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
+                                                  <span className="text-[8px] text-indigo-400 uppercase font-bold tracking-widest leading-none">
+                                                    Espera revisión
+                                                  </span>
+                                                </div>
+                                              </div>
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+
+                                      {/* Right Side: Active Workspace */}
+                                      <div className="lg:col-span-7 flex flex-col justify-between min-h-[440px] lg:pl-2">
+                                        {activeReviewItem ? (
+                                          <div className="flex flex-col h-full justify-between gap-6">
+                                            {/* Sub-Header */}
+                                            <div className="flex items-start justify-between border-b border-slate-800 pb-4">
+                                              <div className="flex items-center gap-3">
+                                                <img
+                                                  src={
+                                                    activeReviewItem.student
+                                                      .avatar
+                                                  }
+                                                  alt={
+                                                    activeReviewItem.student
+                                                      .name
+                                                  }
+                                                  className="w-12 h-12 rounded-full border-2 border-slate-800 bg-slate-900 p-0.5 shrink-0"
+                                                  referrerPolicy="no-referrer"
+                                                />
+                                                <div>
+                                                  <div className="flex items-center gap-2">
+                                                    <h4 className="font-black text-white text-base uppercase tracking-wider">
+                                                      {
+                                                        activeReviewItem.student
+                                                          .name
+                                                      }
+                                                    </h4>
+                                                    <span className="px-2.5 py-0.5 bg-indigo-600/15 border border-indigo-500/20 text-indigo-400 font-mono text-[9px] font-black rounded-full uppercase tracking-wider">
+                                                      {
+                                                        activeReviewItem.student
+                                                          .grade
+                                                      }
+                                                    </span>
+                                                  </div>
+                                                  <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-widest mt-1">
+                                                    Alumno Evaluando • Solicitó
+                                                    Evaluación Directa
+                                                  </p>
+                                                </div>
+                                              </div>
+
+                                              <div className="text-right">
+                                                <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-widest block">
+                                                  Recompensas
+                                                </span>
+                                                <div className="flex items-center gap-2 mt-1 bg-slate-900 border border-slate-800 p-1 px-2.5 rounded-xl">
+                                                  <div className="flex items-center gap-1 font-mono text-amber-400 font-bold text-xs leading-none">
+                                                    <span>
+                                                      +
+                                                      {activeReviewItem
+                                                        .taskDetails?.reward
+                                                        .tokens || 100}
+                                                    </span>
+                                                    <span>🪙</span>
+                                                  </div>
+                                                  {activeReviewItem.taskDetails
+                                                    ?.reward.cardId && (
+                                                    <div
+                                                      className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"
+                                                      title="Incluye Coleccionable"
+                                                    />
+                                                  )}
+                                                </div>
+                                              </div>
+                                            </div>
+
+                                            {/* Submission Body */}
+                                            <div className="space-y-4 flex-1">
+                                              <div className="bg-slate-900/40 p-5 rounded-3xl border border-slate-800/60 text-slate-300">
+                                                <span className="text-[8px] font-black text-indigo-400 tracking-widest uppercase block mb-1">
+                                                  Materia y Desafío
+                                                </span>
+                                                <h5 className="font-extrabold text-white text-[13px] uppercase tracking-wide">
+                                                  {
+                                                    activeReviewItem.taskDetails
+                                                      ?.title
+                                                  }
+                                                </h5>
+                                                <p className="text-xs text-slate-400 italic mt-1">
+                                                  {activeReviewItem.taskDetails
+                                                    ?.description ||
+                                                    "Resolver la lección y responder con la justificación matemática."}
                                                 </p>
                                               </div>
-                                            </div>
 
-                                            <div className="text-right">
-                                              <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-widest block">Recompensas</span>
-                                              <div className="flex items-center gap-2 mt-1 bg-slate-900 border border-slate-800 p-1 px-2.5 rounded-xl">
-                                                <div className="flex items-center gap-1 font-mono text-amber-400 font-bold text-xs leading-none">
-                                                  <span>+{activeReviewItem.taskDetails?.reward.tokens || 100}</span>
-                                                  <span>🪙</span>
+                                              <div className="p-5 bg-indigo-950/5 border border-indigo-500/10 rounded-3xl relative overflow-hidden space-y-3">
+                                                <div className="absolute top-3 right-4 flex items-center gap-2">
+                                                  <Sparkles
+                                                    size={11}
+                                                    className="text-indigo-400 animate-pulse"
+                                                  />
+                                                  <span className="text-[7.5px] font-black text-indigo-400 uppercase tracking-widest font-mono">
+                                                    Verificado
+                                                  </span>
                                                 </div>
-                                                {activeReviewItem.taskDetails?.reward.cardId && (
-                                                  <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" title="Incluye Coleccionable" />
-                                                )}
-                                              </div>
-                                            </div>
-                                          </div>
 
-                                          {/* Submission Body */}
-                                          <div className="space-y-4 flex-1">
-                                            <div className="bg-slate-900/40 p-5 rounded-3xl border border-slate-800/60 text-slate-300">
-                                              <span className="text-[8px] font-black text-indigo-400 tracking-widest uppercase block mb-1">Materia y Desafío</span>
-                                              <h5 className="font-extrabold text-white text-[13px] uppercase tracking-wide">
-                                                {activeReviewItem.taskDetails?.title}
-                                              </h5>
-                                              <p className="text-xs text-slate-400 italic mt-1">
-                                                {activeReviewItem.taskDetails?.description || "Resolver la lección y responder con la justificación matemática."}
-                                              </p>
-                                            </div>
+                                                <span className="text-[8px] font-black text-indigo-400 tracking-widest uppercase block mb-1">
+                                                  Respuestas del Alumno
+                                                </span>
 
-                                            <div className="p-5 bg-indigo-950/5 border border-indigo-500/10 rounded-3xl relative overflow-hidden space-y-3">
-                                              <div className="absolute top-3 right-4 flex items-center gap-2">
-                                                <Sparkles size={11} className="text-indigo-400 animate-pulse" />
-                                                <span className="text-[7.5px] font-black text-indigo-400 uppercase tracking-widest font-mono">Verificado</span>
-                                              </div>
-
-                                              <span className="text-[8px] font-black text-indigo-400 tracking-widest uppercase block mb-1">Respuestas del Alumno</span>
-                                              
-                                              <div className="space-y-2">
-                                                <div className="text-[11px] text-slate-350 text-slate-300 leading-relaxed font-bold italic bg-slate-950/60 p-4 rounded-2xl border border-slate-900 border-l-[3px] border-l-indigo-500">
-                                                  "Desafío completado con éxito. Se justificaron las respuestas aplicando el proceso pedagógico sugerido. Listo para revisión."
-                                                </div>
-                                                <div className="flex items-center gap-4 text-[10px] text-slate-500 bg-slate-950/30 p-2 px-3 rounded-xl border border-slate-900/50 font-mono">
-                                                  <span>⏱️ Tiempo estimado: 15 min</span>
-                                                  <span>📈 Precisión: 100%</span>
+                                                <div className="space-y-2">
+                                                  <div className="text-[11px] text-slate-350 text-slate-300 leading-relaxed font-bold italic bg-slate-950/60 p-4 rounded-2xl border border-slate-900 border-l-[3px] border-l-indigo-500">
+                                                    "Desafío completado con
+                                                    éxito. Se justificaron las
+                                                    respuestas aplicando el
+                                                    proceso pedagógico sugerido.
+                                                    Listo para revisión."
+                                                  </div>
+                                                  <div className="flex items-center gap-4 text-[10px] text-slate-500 bg-slate-950/30 p-2 px-3 rounded-xl border border-slate-900/50 font-mono">
+                                                    <span>
+                                                      ⏱️ Tiempo estimado: 15 min
+                                                    </span>
+                                                    <span>
+                                                      📈 Precisión: 100%
+                                                    </span>
+                                                  </div>
                                                 </div>
                                               </div>
+
+                                              {/* Feedback Comment input */}
+                                              <div className="space-y-1.5 text-left">
+                                                <label className="text-[9px] font-black text-slate-500 tracking-widest uppercase block">
+                                                  Comentario de
+                                                  Retroalimentación (Opcional)
+                                                </label>
+                                                <input
+                                                  type="text"
+                                                  value={teacherFeedbackComment}
+                                                  onChange={(e) =>
+                                                    setTeacherFeedbackComment(
+                                                      e.target.value,
+                                                    )
+                                                  }
+                                                  placeholder="Ej. ¡Excelente esfuerzo! Sigue así... / Revisa el ejercicio 3..."
+                                                  className="w-full bg-slate-950 border border-slate-800 hover:border-slate-705 border-slate-800 hover:border-slate-700 focus:border-indigo-500 rounded-2xl p-4 text-xs font-semibold text-white focus:outline-none transition-all placeholder:text-slate-700"
+                                                />
+                                              </div>
                                             </div>
 
-                                            {/* Feedback Comment input */}
-                                            <div className="space-y-1.5 text-left">
-                                              <label className="text-[9px] font-black text-slate-500 tracking-widest uppercase block">
-                                                Comentario de Retroalimentación (Opcional)
-                                              </label>
-                                              <input
-                                                type="text"
-                                                value={teacherFeedbackComment}
-                                                onChange={(e) => setTeacherFeedbackComment(e.target.value)}
-                                                placeholder="Ej. ¡Excelente esfuerzo! Sigue así... / Revisa el ejercicio 3..."
-                                                className="w-full bg-slate-950 border border-slate-800 hover:border-slate-705 border-slate-800 hover:border-slate-700 focus:border-indigo-500 rounded-2xl p-4 text-xs font-semibold text-white focus:outline-none transition-all placeholder:text-slate-700"
-                                              />
-                                            </div>
-                                          </div>
-
-                                          {/* Control buttons */}
-                                          <div className="flex gap-3 pt-3 border-t border-slate-800/85">
-                                            <button
-                                              onClick={() => {
-                                                const { student, taskId, taskDetails } = activeReviewItem;
-                                                const targetUserStats = rawStudents.find(u => u.id === student.id);
-                                                if (!targetUserStats) return;
-                                                const updatedStats = { ...targetUserStats };
-                                                updatedStats.pendingTasks = updatedStats.pendingTasks?.filter(id => id !== taskId);
-                                                updatedStats.completedTasks = [...(updatedStats.completedTasks || []), taskId];
-                                                if (taskDetails?.reward.tokens) updatedStats.tokens += taskDetails.reward.tokens;
-                                                if (taskDetails?.reward.cardId && !updatedStats.collection.includes(taskDetails.reward.cardId)) {
-                                                  updatedStats.collection.push(taskDetails.reward.cardId);
-                                                }
-                                                // Sync to Supabase
-                                                if (targetUserStats.id) {
-                                                  supabaseService.updateUserStats(targetUserStats.id, updatedStats).then(async () => {
-                                                    await supabaseService.sendNotification(
-                                                      targetUserStats.id!,
-                                                      'Tarea Aprobada',
-                                                      `Tu tarea "${taskDetails?.title}" ha sido aprobada. ${teacherFeedbackComment ? 'Retroalimentación: ' + teacherFeedbackComment : '¡Recibiste tus recompensas!'}`,
-                                                      'success'
+                                            {/* Control buttons */}
+                                            <div className="flex gap-3 pt-3 border-t border-slate-800/85">
+                                              <button
+                                                onClick={() => {
+                                                  const {
+                                                    student,
+                                                    taskId,
+                                                    taskDetails,
+                                                  } = activeReviewItem;
+                                                  const targetUserStats =
+                                                    rawStudents.find(
+                                                      (u) =>
+                                                        u.id === student.id,
                                                     );
-                                                    loadUsers();
-                                                    setTeacherFeedbackComment("");
-                                                    setSelectedReviewItem(null);
-                                                    toast.success('¡Actividad aprobada! Recompensas enviadas al alumno.');
-                                                  }).catch(console.error);
-                                                }
-                                              }}
-                                              className="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs uppercase tracking-widest rounded-2xl flex justify-center items-center gap-2 transition-all shadow-lg shadow-emerald-600/10 hover:shadow-emerald-500/20 duration-300 pointer-events-auto active:scale-95"
-                                            >
-                                              <CheckCircle2 size={16} /> Aprobar y Premiar
-                                            </button>
-
-                                            <button
-                                              onClick={() => {
-                                                const { student, taskId, taskDetails } = activeReviewItem;
-                                                const targetUserStats = rawStudents.find(u => u.id === student.id);
-                                                if (!targetUserStats) return;
-                                                const updatedStats = { ...targetUserStats };
-                                                updatedStats.pendingTasks = updatedStats.pendingTasks?.filter(id => id !== taskId);
-                                                
-                                                if (targetUserStats.id) {
-                                                  supabaseService.updateUserStats(targetUserStats.id, updatedStats).then(async () => {
-                                                    await supabaseService.sendNotification(
-                                                      targetUserStats.id!,
-                                                      'Tarea Rechazada',
-                                                      `Tu tarea "${taskDetails?.title}" no fue aprobada. ${teacherFeedbackComment ? 'Observación: ' + teacherFeedbackComment : 'Por favor, revisa tus respuestas e inténtalo de nuevo.'}`,
-                                                      'error'
+                                                  if (!targetUserStats) return;
+                                                  const updatedStats = {
+                                                    ...targetUserStats,
+                                                  };
+                                                  updatedStats.pendingTasks =
+                                                    updatedStats.pendingTasks?.filter(
+                                                      (id) => id !== taskId,
                                                     );
-                                                    loadUsers();
-                                                    setTeacherFeedbackComment("");
-                                                    setSelectedReviewItem(null);
-                                                    toast.error('Actividad rechazada. El alumno deberá corregir.');
-                                                  }).catch(console.error);
-                                                }
-                                              }}
-                                              className="px-6 py-4 bg-slate-900 hover:bg-rose-950/30 text-rose-400 hover:text-rose-300 border border-slate-850 border-slate-800 hover:border-rose-500/20 font-extrabold text-xs uppercase tracking-widest rounded-2xl flex justify-center items-center gap-2 transition-all duration-300 active:scale-95 shadow-inner"
-                                            >
-                                              <Trash2 size={16} /> Rechazar
-                                            </button>
+                                                  updatedStats.completedTasks =
+                                                    [
+                                                      ...(updatedStats.completedTasks ||
+                                                        []),
+                                                      taskId,
+                                                    ];
+                                                  if (
+                                                    taskDetails?.reward.tokens
+                                                  )
+                                                    updatedStats.tokens +=
+                                                      taskDetails.reward.tokens;
+                                                  if (
+                                                    taskDetails?.reward
+                                                      .cardId &&
+                                                    !updatedStats.collection.includes(
+                                                      taskDetails.reward.cardId,
+                                                    )
+                                                  ) {
+                                                    updatedStats.collection.push(
+                                                      taskDetails.reward.cardId,
+                                                    );
+                                                  }
+                                                  // Sync to Supabase
+                                                  if (targetUserStats.id) {
+                                                    supabaseService
+                                                      .updateUserStats(
+                                                        targetUserStats.id,
+                                                        updatedStats,
+                                                      )
+                                                      .then(async () => {
+                                                        await supabaseService.sendNotification(
+                                                          targetUserStats.id!,
+                                                          "Tarea Aprobada",
+                                                          `Tu tarea "${taskDetails?.title}" ha sido aprobada. ${teacherFeedbackComment ? "Retroalimentación: " + teacherFeedbackComment : "¡Recibiste tus recompensas!"}`,
+                                                          "success",
+                                                        );
+                                                        loadUsers();
+                                                        setTeacherFeedbackComment(
+                                                          "",
+                                                        );
+                                                        setSelectedReviewItem(
+                                                          null,
+                                                        );
+                                                        toast.success(
+                                                          "¡Actividad aprobada! Recompensas enviadas al alumno.",
+                                                        );
+                                                      })
+                                                      .catch(console.error);
+                                                  }
+                                                }}
+                                                className="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs uppercase tracking-widest rounded-2xl flex justify-center items-center gap-2 transition-all shadow-lg shadow-emerald-600/10 hover:shadow-emerald-500/20 duration-300 pointer-events-auto active:scale-95"
+                                              >
+                                                <CheckCircle2 size={16} />{" "}
+                                                Aprobar y Premiar
+                                              </button>
+
+                                              <button
+                                                onClick={() => {
+                                                  const {
+                                                    student,
+                                                    taskId,
+                                                    taskDetails,
+                                                  } = activeReviewItem;
+                                                  const targetUserStats =
+                                                    rawStudents.find(
+                                                      (u) =>
+                                                        u.id === student.id,
+                                                    );
+                                                  if (!targetUserStats) return;
+                                                  const updatedStats = {
+                                                    ...targetUserStats,
+                                                  };
+                                                  updatedStats.pendingTasks =
+                                                    updatedStats.pendingTasks?.filter(
+                                                      (id) => id !== taskId,
+                                                    );
+
+                                                  if (targetUserStats.id) {
+                                                    supabaseService
+                                                      .updateUserStats(
+                                                        targetUserStats.id,
+                                                        updatedStats,
+                                                      )
+                                                      .then(async () => {
+                                                        await supabaseService.sendNotification(
+                                                          targetUserStats.id!,
+                                                          "Tarea Rechazada",
+                                                          `Tu tarea "${taskDetails?.title}" no fue aprobada. ${teacherFeedbackComment ? "Observación: " + teacherFeedbackComment : "Por favor, revisa tus respuestas e inténtalo de nuevo."}`,
+                                                          "error",
+                                                        );
+                                                        loadUsers();
+                                                        setTeacherFeedbackComment(
+                                                          "",
+                                                        );
+                                                        setSelectedReviewItem(
+                                                          null,
+                                                        );
+                                                        toast.error(
+                                                          "Actividad rechazada. El alumno deberá corregir.",
+                                                        );
+                                                      })
+                                                      .catch(console.error);
+                                                  }
+                                                }}
+                                                className="px-6 py-4 bg-slate-900 hover:bg-rose-950/30 text-rose-400 hover:text-rose-300 border border-slate-850 border-slate-800 hover:border-rose-500/20 font-extrabold text-xs uppercase tracking-widest rounded-2xl flex justify-center items-center gap-2 transition-all duration-300 active:scale-95 shadow-inner"
+                                              >
+                                                <Trash2 size={16} /> Rechazar
+                                              </button>
+                                            </div>
                                           </div>
+                                        ) : (
+                                          <div className="flex flex-col items-center justify-center text-center py-20 bg-slate-900/10 border border-slate-900 border-dashed rounded-3xl h-full">
+                                            <AlertCircle
+                                              className="text-slate-600 mb-2"
+                                              size={24}
+                                            />
+                                            <p className="text-xs text-slate-600 uppercase font-black tracking-wider">
+                                              Selecciona una entrega de la
+                                              bandeja
+                                            </p>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
 
+                                {/* Right Side Sidebar: Estadísticas & Destacados */}
+                                <div className="lg:col-span-4 space-y-8">
+                                  {/* Estadísticas de Desempeño */}
+                                  <div className="space-y-4">
+                                    <div className="text-left px-1">
+                                      <h3 className="text-xs font-black uppercase text-indigo-400 tracking-[0.2em] font-sans">
+                                        Estadísticas de Desempeño
+                                      </h3>
+                                    </div>
+
+                                    <div className="flex flex-col gap-4">
+                                      {/* Metric 1 */}
+                                      <div className="bg-slate-900/40 border border-slate-800/80 hover:border-indigo-500/30 p-4 rounded-2xl flex items-center gap-4 transition-all duration-300">
+                                        <div className="p-2.5 bg-indigo-500/10 rounded-xl border border-indigo-500/20 text-indigo-400">
+                                          <Users size={18} />
                                         </div>
-                                      ) : (
-                                        <div className="flex flex-col items-center justify-center text-center py-20 bg-slate-900/10 border border-slate-900 border-dashed rounded-3xl h-full">
-                                          <AlertCircle className="text-slate-600 mb-2" size={24} />
-                                          <p className="text-xs text-slate-600 uppercase font-black tracking-wider">
-                                            Selecciona una entrega de la bandeja
-                                          </p>
+                                        <div className="text-left">
+                                          <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider block">
+                                            Alumnos a cargo
+                                          </span>
+                                          <h4 className="text-2xl font-black text-white italic tracking-tight leading-none mt-1">
+                                            {totalStudentsCount}
+                                          </h4>
                                         </div>
-                                      )}
-                                    </div>
+                                      </div>
 
-                                  </div>
-                                )}
-                              </div>
+                                      {/* Metric 2 */}
+                                      <div className="bg-slate-900/40 border border-slate-800/80 hover:border-amber-500/30 p-4 rounded-2xl flex items-center gap-4 transition-all duration-300">
+                                        <div className="p-2.5 bg-amber-500/10 rounded-xl border border-amber-500/20 text-amber-500">
+                                          <Coins
+                                            size={18}
+                                            className="text-amber-400"
+                                          />
+                                        </div>
+                                        <div className="text-left">
+                                          <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider block">
+                                            Tokens Otorgados
+                                          </span>
+                                          <div className="flex items-baseline gap-1 mt-1">
+                                            <h4 className="text-2xl font-black text-white italic tracking-tight leading-none">
+                                              {totalStudentTokens}
+                                            </h4>
+                                            <span className="text-xs text-amber-400 leading-none">
+                                              🪙
+                                            </span>
+                                          </div>
+                                        </div>
+                                      </div>
 
-                              {/* Right Side Sidebar: Estadísticas & Destacados */}
-                              <div className="lg:col-span-4 space-y-8">
-                                
-                                {/* Estadísticas de Desempeño */}
-                                <div className="space-y-4">
-                                  <div className="text-left px-1">
-                                    <h3 className="text-xs font-black uppercase text-indigo-400 tracking-[0.2em] font-sans">
-                                      Estadísticas de Desempeño
-                                    </h3>
-                                  </div>
-                                  
-                                  <div className="flex flex-col gap-4">
-                                  {/* Metric 1 */}
-                                  <div className="bg-slate-900/40 border border-slate-800/80 hover:border-indigo-500/30 p-4 rounded-2xl flex items-center gap-4 transition-all duration-300">
-                                    <div className="p-2.5 bg-indigo-500/10 rounded-xl border border-indigo-500/20 text-indigo-400">
-                                      <Users size={18} />
-                                    </div>
-                                    <div className="text-left">
-                                      <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider block">
-                                        Alumnos a cargo
-                                      </span>
-                                      <h4 className="text-2xl font-black text-white italic tracking-tight leading-none mt-1">{totalStudentsCount}</h4>
-                                    </div>
-                                  </div>
-
-                                  {/* Metric 2 */}
-                                  <div className="bg-slate-900/40 border border-slate-800/80 hover:border-amber-500/30 p-4 rounded-2xl flex items-center gap-4 transition-all duration-300">
-                                    <div className="p-2.5 bg-amber-500/10 rounded-xl border border-amber-500/20 text-amber-500">
-                                      <Coins size={18} className="text-amber-400" />
-                                    </div>
-                                    <div className="text-left">
-                                      <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider block">
-                                        Tokens Otorgados
-                                      </span>
-                                      <div className="flex items-baseline gap-1 mt-1">
-                                        <h4 className="text-2xl font-black text-white italic tracking-tight leading-none">{totalStudentTokens}</h4>
-                                        <span className="text-xs text-amber-400 leading-none">🪙</span>
+                                      {/* Metric 3 */}
+                                      <div
+                                        className={cn(
+                                          "border p-4 rounded-2xl flex items-center gap-4 transition-all duration-300",
+                                          totalPendingReviews > 0
+                                            ? "bg-rose-950/25 border-rose-500/30 hover:border-rose-500/50 shadow-rose-500/5"
+                                            : "bg-slate-900/40 border-slate-800/80 hover:border-slate-700",
+                                        )}
+                                      >
+                                        <div
+                                          className={cn(
+                                            "p-2.5 rounded-xl border transition-all duration-300",
+                                            totalPendingReviews > 0
+                                              ? "bg-rose-500/20 border-rose-500/30 text-rose-400 animate-pulse"
+                                              : "bg-slate-850 border-slate-800 text-slate-400",
+                                          )}
+                                        >
+                                          <AlertCircle size={18} />
+                                        </div>
+                                        <div className="text-left">
+                                          <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider block">
+                                            Pendientes de Revisión
+                                          </span>
+                                          <h4
+                                            className={cn(
+                                              "text-2xl font-black italic tracking-tight leading-none mt-1",
+                                              totalPendingReviews > 0
+                                                ? "text-rose-400"
+                                                : "text-white",
+                                            )}
+                                          >
+                                            {totalPendingReviews}
+                                          </h4>
+                                        </div>
                                       </div>
                                     </div>
                                   </div>
 
-                                  {/* Metric 3 */}
-                                  <div className={cn(
-                                    "border p-4 rounded-2xl flex items-center gap-4 transition-all duration-300",
-                                    totalPendingReviews > 0 
-                                      ? "bg-rose-950/25 border-rose-500/30 hover:border-rose-500/50 shadow-rose-500/5" 
-                                      : "bg-slate-900/40 border-slate-800/80 hover:border-slate-700"
-                                  )}>
-                                    <div className={cn(
-                                      "p-2.5 rounded-xl border transition-all duration-300",
-                                      totalPendingReviews > 0
-                                        ? "bg-rose-500/20 border-rose-500/30 text-rose-400 animate-pulse"
-                                        : "bg-slate-850 border-slate-800 text-slate-400"
-                                    )}>
-                                      <AlertCircle size={18} />
-                                    </div>
-                                    <div className="text-left">
-                                      <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider block">
-                                        Pendientes de Revisión
-                                      </span>
-                                      <h4 className={cn("text-2xl font-black italic tracking-tight leading-none mt-1", totalPendingReviews > 0 ? "text-rose-400" : "text-white")}>
-                                        {totalPendingReviews}
+                                  {/* Alumnos Destacados */}
+                                  <div className="space-y-4">
+                                    <div className="text-left px-1 flex items-center gap-2 text-indigo-400">
+                                      <Trophy size={16} />
+                                      <h4 className="text-xs font-black uppercase tracking-widest font-sans">
+                                        Alumnos Destacados del Aula
                                       </h4>
+                                    </div>
+
+                                    <div className="flex flex-col gap-4">
+                                      {topStudents.length === 0 ? (
+                                        <div className="py-8 text-center text-slate-600 text-[10px] font-bold uppercase tracking-widest bg-slate-950/20 rounded-2xl border border-slate-800/40">
+                                          No hay alumnos vinculados aún
+                                        </div>
+                                      ) : (
+                                        topStudents.map((student, index) => {
+                                          const podiumIcons = [
+                                            "🏆 1er Lugar",
+                                            "🥈 2do Lugar",
+                                            "🥉 3er Lugar",
+                                          ];
+                                          const cardStyles = [
+                                            "bg-gradient-to-br from-amber-500/5 to-transparent border-amber-500/20 text-amber-400 shadow-lg shadow-amber-500/5",
+                                            "bg-gradient-to-br from-slate-400/5 to-transparent border-slate-500/10 text-slate-300",
+                                            "bg-gradient-to-br from-orange-500/5 to-transparent border-orange-600/10 text-orange-400",
+                                          ];
+
+                                          return (
+                                            <div
+                                              key={
+                                                student.id ||
+                                                `top-student-${index}`
+                                              }
+                                              className={cn(
+                                                "flex flex-col justify-between p-5 rounded-2xl border transform hover:-translate-y-1 duration-200 gap-4 text-left relative overflow-hidden",
+                                                cardStyles[index] ||
+                                                  "bg-slate-950/40 border-slate-900 text-slate-400",
+                                              )}
+                                            >
+                                              <div className="flex items-center gap-3">
+                                                <img
+                                                  src={student.avatar}
+                                                  alt={student.name}
+                                                  className="w-12 h-12 rounded-full border border-slate-800 bg-slate-950 p-0.5 shrink-0"
+                                                  referrerPolicy="no-referrer"
+                                                />
+                                                <div className="min-w-0">
+                                                  <span className="text-[9px] font-black uppercase tracking-widest block opacity-70 mb-0.5">
+                                                    {podiumIcons[index] ||
+                                                      `#${index + 1}`}
+                                                  </span>
+                                                  <h5 className="font-extrabold text-white text-sm uppercase tracking-wider truncate">
+                                                    {student.name}
+                                                  </h5>
+                                                </div>
+                                              </div>
+
+                                              <div className="flex items-center justify-between border-t border-white/5 pt-3">
+                                                <div className="text-[10px] font-black tracking-widest text-slate-450 text-slate-400 uppercase bg-slate-950/50 px-2 py-0.5 rounded border border-slate-800/40">
+                                                  Grado {student.grade}
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                  <div className="flex items-center gap-0.5 text-orange-400 font-black text-xs">
+                                                    <Flame
+                                                      size={12}
+                                                      className="fill-orange-400 animate-pulse"
+                                                    />
+                                                    <span>
+                                                      {student.streak}d
+                                                    </span>
+                                                  </div>
+                                                  <div className="flex items-center gap-1 bg-slate-950/70 py-1 px-2.5 rounded-lg border border-slate-800/60 font-mono text-xs text-amber-400 font-bold">
+                                                    <span>
+                                                      {student.tokens}
+                                                    </span>
+                                                    <span className="text-[10px]">
+                                                      🪙
+                                                    </span>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          );
+                                        })
+                                      )}
                                     </div>
                                   </div>
                                 </div>
                               </div>
-
-                              {/* Alumnos Destacados */}
-                              <div className="space-y-4">
-                                <div className="text-left px-1 flex items-center gap-2 text-indigo-400">
-                                  <Trophy size={16} />
-                                  <h4 className="text-xs font-black uppercase tracking-widest font-sans">
-                                    Alumnos Destacados del Aula
-                                  </h4>
-                                </div>
-
-                                <div className="flex flex-col gap-4">
-                                  {topStudents.length === 0 ? (
-                                    <div className="py-8 text-center text-slate-600 text-[10px] font-bold uppercase tracking-widest bg-slate-950/20 rounded-2xl border border-slate-800/40">
-                                      No hay alumnos vinculados aún
-                                    </div>
-                                  ) : (
-                                    topStudents.map((student, index) => {
-                                      const podiumIcons = ["🏆 1er Lugar", "🥈 2do Lugar", "🥉 3er Lugar"];
-                                      const cardStyles = [
-                                        "bg-gradient-to-br from-amber-500/5 to-transparent border-amber-500/20 text-amber-400 shadow-lg shadow-amber-500/5",
-                                        "bg-gradient-to-br from-slate-400/5 to-transparent border-slate-500/10 text-slate-300",
-                                        "bg-gradient-to-br from-orange-500/5 to-transparent border-orange-600/10 text-orange-400"
-                                      ];
-
-                                      return (
-                                        <div 
-                                          key={student.id} 
-                                          className={cn(
-                                            "flex flex-col justify-between p-5 rounded-2xl border transform hover:-translate-y-1 duration-200 gap-4 text-left relative overflow-hidden",
-                                            cardStyles[index] || "bg-slate-950/40 border-slate-900 text-slate-400"
-                                          )}
-                                        >
-                                          <div className="flex items-center gap-3">
-                                            <img 
-                                              src={student.avatar} 
-                                              alt={student.name}
-                                              className="w-12 h-12 rounded-full border border-slate-800 bg-slate-950 p-0.5 shrink-0" 
-                                              referrerPolicy="no-referrer"
-                                            />
-                                            <div className="min-w-0">
-                                              <span className="text-[9px] font-black uppercase tracking-widest block opacity-70 mb-0.5">
-                                                {podiumIcons[index] || `#${index + 1}`}
-                                              </span>
-                                              <h5 className="font-extrabold text-white text-sm uppercase tracking-wider truncate">
-                                                {student.name}
-                                              </h5>
-                                            </div>
-                                          </div>
-
-                                          <div className="flex items-center justify-between border-t border-white/5 pt-3">
-                                            <div className="text-[10px] font-black tracking-widest text-slate-450 text-slate-400 uppercase bg-slate-950/50 px-2 py-0.5 rounded border border-slate-800/40">
-                                              Grado {student.grade}
-                                            </div>
-                                            <div className="flex items-center gap-3">
-                                              <div className="flex items-center gap-0.5 text-orange-400 font-black text-xs">
-                                                <Flame size={12} className="fill-orange-400 animate-pulse" />
-                                                <span>{student.streak}d</span>
-                                              </div>
-                                              <div className="flex items-center gap-1 bg-slate-950/70 py-1 px-2.5 rounded-lg border border-slate-800/60 font-mono text-xs text-amber-400 font-bold">
-                                                <span>{student.tokens}</span>
-                                                <span className="text-[10px]">🪙</span>
-                                              </div>
-                                            </div>
-                                          </div>
-                                        </div>
-                                      );
-                                    })
-                                  )}
-                                </div>
-                              </div>
-
                             </div>
-                          </div>
-                        </div>
-                      );
+                          );
                         })()}
                       </div>
                     ) : (
@@ -3709,12 +4859,18 @@ export default function App() {
                                 ¿Listo para un desafío?
                               </h2>
                               <p className="text-slate-400 text-base sm:text-lg font-medium opacity-90">
-                                Demuestra qué tanto sabes de cultura general para ganar puntos.
+                                Demuestra qué tanto sabes de cultura general
+                                para ganar puntos.
                               </p>
                               <div className="flex flex-wrap gap-4 mt-8 justify-start">
                                 <button
                                   onClick={() => {
-                                    if (hasCompletedDaily || sessionCompletedChallenges.has(currentChallenge.id)) {
+                                    if (
+                                      hasCompletedDaily ||
+                                      sessionCompletedChallenges.has(
+                                        currentChallenge.id,
+                                      )
+                                    ) {
                                       generateDailyChallenge();
                                     }
                                     setShowChallengeModal(true);
@@ -3729,7 +4885,10 @@ export default function App() {
                                 >
                                   {isGeneratingChallenge ? (
                                     <>
-                                      <Loader2 size={18} className="animate-spin text-slate-500" />
+                                      <Loader2
+                                        size={18}
+                                        className="animate-spin text-slate-500"
+                                      />
                                       Generando...
                                     </>
                                   ) : hasCompletedDaily ? (
@@ -3774,53 +4933,56 @@ export default function App() {
                                 </h4>
                                 <div className="space-y-2">
                                   {allStudents
-                                    .filter(s => s.grade === stats.grade)
+                                    .filter((s) => s.grade === stats.grade)
                                     .sort((a, b) => b.tokens - a.tokens)
                                     .slice(0, 10)
                                     .map((student, i) => (
-                                    <button
-                                      key={student.id}
-                                      onClick={() =>
-                                        setSelectedStudent(student)
-                                      }
-                                      className={cn(
-                                        "w-full flex items-center justify-between p-3 rounded-3xl transition-all border",
-                                        selectedStudent?.id === student.id
-                                          ? "bg-indigo-600/10 border-indigo-500/30 text-white shadow-md"
-                                          : "bg-transparent border-transparent text-slate-400 hover:bg-slate-800/50 hover:text-slate-200",
-                                      )}
-                                    >
-                                      <div className="flex items-center gap-4">
-                                        <div className="relative">
-                                          <img
-                                            src={student.avatar}
-                                            alt={student.name}
-                                            className="w-12 h-12 rounded-2xl object-cover border-2 border-slate-700 shadow-lg"
-                                          />
-                                          <div className="absolute -top-2 -left-2 w-6 h-6 bg-slate-950 rounded-full flex items-center justify-center text-[10px] font-black italic border border-slate-800">
-                                            #{i + 1}
+                                      <button
+                                        key={
+                                          student.id ||
+                                          `ranking-${student.username || i}`
+                                        }
+                                        onClick={() =>
+                                          setSelectedStudent(student)
+                                        }
+                                        className={cn(
+                                          "w-full flex items-center justify-between p-3 rounded-3xl transition-all border",
+                                          selectedStudent?.id === student.id
+                                            ? "bg-indigo-600/10 border-indigo-500/30 text-white shadow-md"
+                                            : "bg-transparent border-transparent text-slate-400 hover:bg-slate-800/50 hover:text-slate-200",
+                                        )}
+                                      >
+                                        <div className="flex items-center gap-4">
+                                          <div className="relative">
+                                            <img
+                                              src={student.avatar}
+                                              alt={student.name}
+                                              className="w-12 h-12 rounded-2xl object-cover border-2 border-slate-700 shadow-lg"
+                                            />
+                                            <div className="absolute -top-2 -left-2 w-6 h-6 bg-slate-950 rounded-full flex items-center justify-center text-[10px] font-black italic border border-slate-800">
+                                              #{i + 1}
+                                            </div>
+                                          </div>
+                                          <div className="text-left">
+                                            <p className="text-xs font-black uppercase tracking-tight">
+                                              {student.name}
+                                            </p>
+                                            <p className="text-[9px] font-bold text-slate-500 tracking-widest">
+                                              {student.grade} GRADO
+                                            </p>
                                           </div>
                                         </div>
-                                        <div className="text-left">
-                                          <p className="text-xs font-black uppercase tracking-tight">
-                                            {student.name}
-                                          </p>
-                                          <p className="text-[9px] font-bold text-slate-500 tracking-widest">
-                                            {student.grade} GRADO
-                                          </p>
+                                        <div className="flex items-center gap-2">
+                                          <Flame
+                                            size={14}
+                                            className="text-rose-500"
+                                          />
+                                          <span className="text-xs font-black italic">
+                                            {student.streak}
+                                          </span>
                                         </div>
-                                      </div>
-                                      <div className="flex items-center gap-2">
-                                        <Flame
-                                          size={14}
-                                          className="text-rose-500"
-                                        />
-                                        <span className="text-xs font-black italic">
-                                          {student.streak}
-                                        </span>
-                                      </div>
-                                    </button>
-                                  ))}
+                                      </button>
+                                    ))}
                                 </div>
                               </div>
 
@@ -3870,37 +5032,39 @@ export default function App() {
                                       </div>
 
                                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-3 px-2 sm:px-0">
-                                        {allAvailableCards.filter(
-                                          (c) =>
-                                            c.category === rankingSubTab &&
-                                            selectedStudent.collection.includes(
-                                              c.id,
-                                            ),
-                                        ).map((card) => {
-                                          return (
-                                            <div
-                                              key={card.id}
-                                              onClick={() =>
-                                                setSelectedCardId(card.id)
-                                              }
-                                              className={cn(
-                                                "aspect-[2/3] bg-black rounded-2xl md:rounded-[2rem] overflow-hidden border transition-all cursor-pointer group shadow-lg flex items-center justify-center relative",
-                                                card.rarity === "Legendary"
-                                                  ? "border-amber-500/60 shadow-amber-500/20"
-                                                  : card.rarity === "Epic"
-                                                    ? "border-purple-600/60 shadow-purple-500/20"
-                                                    : card.rarity === "Rare"
-                                                      ? "border-blue-500/60 shadow-blue-500/20"
-                                                      : "border-slate-800",
-                                              )}
-                                            >
-                                              <img
-                                                src={card.imageUrl}
-                                                className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
-                                              />
-                                            </div>
-                                          );
-                                        })}
+                                        {allAvailableCards
+                                          .filter(
+                                            (c) =>
+                                              c.category === rankingSubTab &&
+                                              selectedStudent.collection.includes(
+                                                c.id,
+                                              ),
+                                          )
+                                          .map((card) => {
+                                            return (
+                                              <div
+                                                key={card.id}
+                                                onClick={() =>
+                                                  setSelectedCardId(card.id)
+                                                }
+                                                className={cn(
+                                                  "aspect-[2/3] bg-black rounded-2xl md:rounded-[2rem] overflow-hidden border transition-all cursor-pointer group shadow-lg flex items-center justify-center relative",
+                                                  card.rarity === "Legendary"
+                                                    ? "border-amber-500/60 shadow-amber-500/20"
+                                                    : card.rarity === "Epic"
+                                                      ? "border-purple-600/60 shadow-purple-500/20"
+                                                      : card.rarity === "Rare"
+                                                        ? "border-blue-500/60 shadow-blue-500/20"
+                                                        : "border-slate-800",
+                                                )}
+                                              >
+                                                <img
+                                                  src={card.imageUrl}
+                                                  className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
+                                                />
+                                              </div>
+                                            );
+                                          })}
                                       </div>
                                       {allAvailableCards.filter(
                                         (c) =>
@@ -3989,76 +5153,76 @@ export default function App() {
                           </div>
 
                           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4 pt-12">
-                            {allAvailableCards.filter(
-                              (c) => c.category === collectionSubTab,
-                            ).map((card) => (
-                              <button
-                                key={card.id}
-                                onClick={() => setSelectedAdminCard(card)}
-                                className={cn(
-                                  "relative aspect-[2/3] rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-500 hover:scale-[1.05] active:scale-95 shadow-lg border bg-slate-950",
-                                  card.rarity === "Legendary"
-                                    ? "border-amber-500/50 shadow-amber-500/20"
-                                    : card.rarity === "Epic"
-                                      ? "border-purple-500/50 shadow-purple-500/20"
-                                      : card.rarity === "Rare"
-                                        ? "border-indigo-500/50 shadow-indigo-500/20"
-                                        : "border-slate-800 shadow-black/50",
-                                )}
-                              >
-                                <img
-                                  src={card.imageUrl}
-                                  alt={card.name}
-                                  className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 opacity-90 group-hover:opacity-100"
-                                  referrerPolicy="no-referrer"
-                                />
-                                {/* Holographic Overlay */}
-                                <div className="absolute inset-0 bg-gradient-to-tr from-indigo-500/10 via-transparent to-purple-500/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-                                <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/pinstripe-light.png')] opacity-[0.03] mix-blend-overlay pointer-events-none" />
-                                <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-slate-950 via-slate-950/80 to-transparent pt-8">
-                                  <h4 className="font-black text-[10px] uppercase text-white tracking-tighter leading-tight truncate drop-shadow-md">
-                                    {card.name}
-                                  </h4>
-                                  <div className="flex items-center gap-1.5 mt-1">
-                                    <div
-                                      className={cn(
-                                        "w-1.5 h-1.5 rounded-full shadow-lg",
-                                        card.rarity === "Secret"
-                                          ? "bg-rose-400"
-                                          : card.rarity === "Legendary"
-                                            ? "bg-amber-400"
-                                            : card.rarity === "Epic"
-                                              ? "bg-purple-400"
-                                              : card.rarity === "Rare"
-                                                ? "bg-indigo-400"
-                                                : "bg-slate-400",
-                                      )}
-                                    />
-                                    <span
-                                      className={cn(
-                                        "text-[7px] font-black uppercase opacity-70",
-                                        card.rarity === "Secret"
-                                          ? "text-rose-400"
-                                          : card.rarity === "Legendary"
-                                            ? "text-amber-400"
-                                            : card.rarity === "Epic"
-                                              ? "text-purple-400"
-                                              : card.rarity === "Rare"
-                                                ? "text-indigo-400"
-                                                : "text-slate-400",
-                                      )}
-                                    >
-                                      {card.rarity}
-                                    </span>
+                            {allAvailableCards
+                              .filter((c) => c.category === collectionSubTab)
+                              .map((card) => (
+                                <button
+                                  key={card.id}
+                                  onClick={() => setSelectedAdminCard(card)}
+                                  className={cn(
+                                    "relative aspect-[2/3] rounded-2xl md:rounded-[2rem] overflow-hidden group transition-all duration-500 hover:scale-[1.05] active:scale-95 shadow-lg border bg-slate-950",
+                                    card.rarity === "Legendary"
+                                      ? "border-amber-500/50 shadow-amber-500/20"
+                                      : card.rarity === "Epic"
+                                        ? "border-purple-500/50 shadow-purple-500/20"
+                                        : card.rarity === "Rare"
+                                          ? "border-indigo-500/50 shadow-indigo-500/20"
+                                          : "border-slate-800 shadow-black/50",
+                                  )}
+                                >
+                                  <img
+                                    src={card.imageUrl}
+                                    alt={card.name}
+                                    className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 opacity-90 group-hover:opacity-100"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                  {/* Holographic Overlay */}
+                                  <div className="absolute inset-0 bg-gradient-to-tr from-indigo-500/10 via-transparent to-purple-500/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+                                  <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/pinstripe-light.png')] opacity-[0.03] mix-blend-overlay pointer-events-none" />
+                                  <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-slate-950 via-slate-950/80 to-transparent pt-8">
+                                    <h4 className="font-black text-[10px] uppercase text-white tracking-tighter leading-tight truncate drop-shadow-md">
+                                      {card.name}
+                                    </h4>
+                                    <div className="flex items-center gap-1.5 mt-1">
+                                      <div
+                                        className={cn(
+                                          "w-1.5 h-1.5 rounded-full shadow-lg",
+                                          card.rarity === "Secret"
+                                            ? "bg-rose-400"
+                                            : card.rarity === "Legendary"
+                                              ? "bg-amber-400"
+                                              : card.rarity === "Epic"
+                                                ? "bg-purple-400"
+                                                : card.rarity === "Rare"
+                                                  ? "bg-indigo-400"
+                                                  : "bg-slate-400",
+                                        )}
+                                      />
+                                      <span
+                                        className={cn(
+                                          "text-[7px] font-black uppercase opacity-70",
+                                          card.rarity === "Secret"
+                                            ? "text-rose-400"
+                                            : card.rarity === "Legendary"
+                                              ? "text-amber-400"
+                                              : card.rarity === "Epic"
+                                                ? "text-purple-400"
+                                                : card.rarity === "Rare"
+                                                  ? "text-indigo-400"
+                                                  : "text-slate-400",
+                                        )}
+                                      >
+                                        {card.rarity}
+                                      </span>
+                                    </div>
                                   </div>
-                                </div>
-                                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <div className="w-6 h-6 bg-white/10  rounded-lg flex items-center justify-center text-white">
-                                    <Pencil size={12} />
+                                  <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <div className="w-6 h-6 bg-white/10  rounded-lg flex items-center justify-center text-white">
+                                      <Pencil size={12} />
+                                    </div>
                                   </div>
-                                </div>
-                              </button>
-                            ))}
+                                </button>
+                              ))}
                           </div>
                         </div>
                       </div>
@@ -4074,7 +5238,10 @@ export default function App() {
                                   onClick={() => setSelectedTeacherGroup(null)}
                                   className="flex items-center gap-2 group text-slate-300 hover:text-white text-xs font-black uppercase tracking-widest bg-slate-900/60 border border-slate-800 p-2.5 px-5 rounded-2xl transition-all hover:bg-slate-800/80 cursor-pointer"
                                 >
-                                  <ArrowLeft size={14} className="transition-transform group-hover:-translate-x-1" />
+                                  <ArrowLeft
+                                    size={14}
+                                    className="transition-transform group-hover:-translate-x-1"
+                                  />
                                   Volver a Grupos
                                 </button>
                                 <div>
@@ -4097,9 +5264,16 @@ export default function App() {
                                     <Users size={16} />
                                   </div>
                                   <div className="flex flex-col text-left">
-                                    <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">Alumnos</span>
+                                    <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">
+                                      Alumnos
+                                    </span>
                                     <span className="text-base font-black text-white">
-                                      {globalStudents.filter(s => s.grade === selectedTeacherGroup).length}
+                                      {
+                                        globalStudents.filter(
+                                          (s) =>
+                                            s.grade === selectedTeacherGroup,
+                                        ).length
+                                      }
                                     </span>
                                   </div>
                                 </div>
@@ -4109,31 +5283,65 @@ export default function App() {
                                     <CheckCircle2 size={16} />
                                   </div>
                                   <div className="flex flex-col text-left">
-                                    <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider font-sans">Misiones</span>
+                                    <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider font-sans">
+                                      Misiones
+                                    </span>
                                     <span className="text-base font-black text-white">
-                                      {globalStudents.filter(s => s.grade === selectedTeacherGroup).reduce((sum, s) => sum + s.completedTasks.length, 0)}
+                                      {globalStudents
+                                        .filter(
+                                          (s) =>
+                                            s.grade === selectedTeacherGroup,
+                                        )
+                                        .reduce(
+                                          (sum, s) =>
+                                            sum + s.completedTasks.length,
+                                          0,
+                                        )}
                                     </span>
                                   </div>
                                 </div>
 
                                 {(() => {
-                                  const totalPendingGroup = globalStudents.filter(s => s.grade === selectedTeacherGroup).reduce((sum, s) => sum + (s.pendingTasks?.length || 0), 0);
+                                  const totalPendingGroup = globalStudents
+                                    .filter(
+                                      (s) => s.grade === selectedTeacherGroup,
+                                    )
+                                    .reduce(
+                                      (sum, s) =>
+                                        sum + (s.pendingTasks?.length || 0),
+                                      0,
+                                    );
                                   return (
-                                    <div className={cn(
-                                      "border p-3 px-5 rounded-2xl flex items-center gap-3 min-w-[120px] transition-all",
-                                      totalPendingGroup > 0 
-                                        ? "bg-amber-500/[0.04] border-amber-500/30" 
-                                        : "bg-slate-900/40 border-slate-800/80"
-                                    )}>
-                                      <div className={cn(
-                                        "w-10 h-10 rounded-xl flex items-center justify-center",
-                                        totalPendingGroup > 0 ? "bg-amber-500/10 text-amber-400 font-sans" : "bg-slate-800/60 text-slate-500 font-sans"
-                                      )}>
+                                    <div
+                                      className={cn(
+                                        "border p-3 px-5 rounded-2xl flex items-center gap-3 min-w-[120px] transition-all",
+                                        totalPendingGroup > 0
+                                          ? "bg-amber-500/[0.04] border-amber-500/30"
+                                          : "bg-slate-900/40 border-slate-800/80",
+                                      )}
+                                    >
+                                      <div
+                                        className={cn(
+                                          "w-10 h-10 rounded-xl flex items-center justify-center",
+                                          totalPendingGroup > 0
+                                            ? "bg-amber-500/10 text-amber-400 font-sans"
+                                            : "bg-slate-800/60 text-slate-500 font-sans",
+                                        )}
+                                      >
                                         <AlertCircle size={14} />
                                       </div>
                                       <div className="flex flex-col text-left">
-                                        <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">Pendientes</span>
-                                        <span className={cn("text-base font-black", totalPendingGroup > 0 ? "text-amber-400" : "text-white")}>
+                                        <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">
+                                          Pendientes
+                                        </span>
+                                        <span
+                                          className={cn(
+                                            "text-base font-black",
+                                            totalPendingGroup > 0
+                                              ? "text-amber-400"
+                                              : "text-white",
+                                          )}
+                                        >
                                           {totalPendingGroup}
                                         </span>
                                       </div>
@@ -4143,7 +5351,9 @@ export default function App() {
                               </div>
                             </div>
 
-                            {globalStudents.filter(s => s.grade === selectedTeacherGroup).length === 0 ? (
+                            {globalStudents.filter(
+                              (s) => s.grade === selectedTeacherGroup,
+                            ).length === 0 ? (
                               <div className="bg-slate-900 border border-slate-800 p-16 rounded-[2.5rem] flex flex-col items-center justify-center text-center text-slate-500 font-bold text-xs uppercase tracking-widest">
                                 <Users size={48} className="opacity-20 mb-4" />
                                 No hay alumnos registrados en este grupo.
@@ -4157,23 +5367,36 @@ export default function App() {
                                       Alumnos de la Clase
                                     </h3>
                                     <span className="text-[10px] font-black text-slate-500 font-sans bg-slate-900/60 px-2.5 py-0.5 rounded-md border border-slate-800">
-                                      {globalStudents.filter(s => s.grade === selectedTeacherGroup).length} total
+                                      {
+                                        globalStudents.filter(
+                                          (s) =>
+                                            s.grade === selectedTeacherGroup,
+                                        ).length
+                                      }{" "}
+                                      total
                                     </span>
                                   </div>
 
                                   {/* SEARCH BAR */}
                                   <div className="relative">
-                                    <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                                    <Search
+                                      size={14}
+                                      className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"
+                                    />
                                     <input
                                       type="text"
                                       value={groupStudentSearch}
-                                      onChange={(e) => setGroupStudentSearch(e.target.value)}
+                                      onChange={(e) =>
+                                        setGroupStudentSearch(e.target.value)
+                                      }
                                       placeholder="Buscar alumno..."
                                       className="w-full bg-slate-900/60 border border-slate-800 focus:border-indigo-500/80 rounded-2xl p-2.5 pl-10 text-xs font-semibold text-white focus:outline-none placeholder:text-slate-600 transition-all text-left"
                                     />
                                     {groupStudentSearch && (
                                       <button
-                                        onClick={() => setGroupStudentSearch("")}
+                                        onClick={() =>
+                                          setGroupStudentSearch("")
+                                        }
                                         className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white cursor-pointer"
                                       >
                                         <X size={12} />
@@ -4184,34 +5407,40 @@ export default function App() {
                                   {/* FILTERS */}
                                   <div className="flex gap-1.5 p-1 bg-slate-900/20 rounded-xl border border-slate-800/40">
                                     <button
-                                      onClick={() => setActiveStudentFilter('all')}
+                                      onClick={() =>
+                                        setActiveStudentFilter("all")
+                                      }
                                       className={cn(
                                         "flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer",
-                                        activeStudentFilter === 'all'
+                                        activeStudentFilter === "all"
                                           ? "bg-indigo-600/15 text-indigo-400 border border-indigo-500/20"
-                                          : "text-slate-500 hover:text-slate-300"
+                                          : "text-slate-500 hover:text-slate-300",
                                       )}
                                     >
                                       Todos
                                     </button>
                                     <button
-                                      onClick={() => setActiveStudentFilter('pending')}
+                                      onClick={() =>
+                                        setActiveStudentFilter("pending")
+                                      }
                                       className={cn(
                                         "flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer",
-                                        activeStudentFilter === 'pending'
+                                        activeStudentFilter === "pending"
                                           ? "bg-amber-500/15 text-amber-400 border border-amber-500/20"
-                                          : "text-slate-500 hover:text-slate-300"
+                                          : "text-slate-500 hover:text-slate-300",
                                       )}
                                     >
                                       Pendientes
                                     </button>
                                     <button
-                                      onClick={() => setActiveStudentFilter('online')}
+                                      onClick={() =>
+                                        setActiveStudentFilter("online")
+                                      }
                                       className={cn(
                                         "flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer",
-                                        activeStudentFilter === 'online'
+                                        activeStudentFilter === "online"
                                           ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20"
-                                          : "text-slate-500 hover:text-slate-300"
+                                          : "text-slate-500 hover:text-slate-300",
                                       )}
                                     >
                                       En Línea
@@ -4221,18 +5450,36 @@ export default function App() {
                                   {/* ENDPOINT USER CARD TILES CONTAINER */}
                                   <div className="flex flex-col gap-2 max-h-[500px] overflow-y-auto pr-1 no-scrollbar">
                                     {(() => {
-                                      const studentsInGroup = globalStudents.filter(s => s.grade === selectedTeacherGroup);
+                                      const studentsInGroup =
+                                        globalStudents.filter(
+                                          (s) =>
+                                            s.grade === selectedTeacherGroup,
+                                        );
                                       const filteredStudents = studentsInGroup
                                         .filter((std) => {
-                                          if (!groupStudentSearch.trim()) return true;
-                                          return std.name.toLowerCase().includes(groupStudentSearch.toLowerCase());
+                                          if (!groupStudentSearch.trim())
+                                            return true;
+                                          return std.name
+                                            .toLowerCase()
+                                            .includes(
+                                              groupStudentSearch.toLowerCase(),
+                                            );
                                         })
                                         .filter((std) => {
-                                          if (activeStudentFilter === "pending") {
-                                            return (std.pendingTasks?.length || 0) > 0;
+                                          if (
+                                            activeStudentFilter === "pending"
+                                          ) {
+                                            return (
+                                              (std.pendingTasks?.length || 0) >
+                                              0
+                                            );
                                           }
-                                          if (activeStudentFilter === "online") {
-                                            const isOnline = (std.tokens % 3 === 0) || (std.streak > 8);
+                                          if (
+                                            activeStudentFilter === "online"
+                                          ) {
+                                            const isOnline =
+                                              std.tokens % 3 === 0 ||
+                                              std.streak > 8;
                                             return isOnline;
                                           }
                                           return true;
@@ -4247,10 +5494,15 @@ export default function App() {
                                       }
 
                                       return filteredStudents.map((std) => {
-                                        const isSelected = std.id === activeGroupStudentId;
-                                        const completedCount = std.completedTasks.length;
-                                        const pendingCount = std.pendingTasks?.length || 0;
-                                        const isOnline = (std.tokens % 3 === 0) || (std.streak > 8);
+                                        const isSelected =
+                                          std.id === activeGroupStudentId;
+                                        const completedCount =
+                                          std.completedTasks.length;
+                                        const pendingCount =
+                                          std.pendingTasks?.length || 0;
+                                        const isOnline =
+                                          std.tokens % 3 === 0 ||
+                                          std.streak > 8;
 
                                         return (
                                           <motion.button
@@ -4265,15 +5517,19 @@ export default function App() {
                                               "w-full p-3.5 rounded-2xl flex items-center justify-between gap-3 transition-all border text-left cursor-pointer",
                                               isSelected
                                                 ? "bg-indigo-600/15 border-indigo-500 shadow-md shadow-indigo-500/5"
-                                                : "bg-slate-950 border-slate-900 hover:bg-slate-900/80 hover:border-slate-800"
+                                                : "bg-slate-950 border-slate-900 hover:bg-slate-900/80 hover:border-slate-800",
                                             )}
                                           >
                                             <div className="flex items-center gap-3 min-w-0">
                                               <div className="relative mt-0.5">
-                                                <div className={cn(
-                                                  "w-10 h-10 rounded-full flex items-center justify-center border-2 overflow-hidden relative bg-slate-900",
-                                                  isSelected ? "border-indigo-400" : "border-slate-800"
-                                                )}>
+                                                <div
+                                                  className={cn(
+                                                    "w-10 h-10 rounded-full flex items-center justify-center border-2 overflow-hidden relative bg-slate-900",
+                                                    isSelected
+                                                      ? "border-indigo-400"
+                                                      : "border-slate-800",
+                                                  )}
+                                                >
                                                   {std.avatar ? (
                                                     <img
                                                       src={std.avatar}
@@ -4297,14 +5553,22 @@ export default function App() {
                                               </div>
 
                                               <div className="min-w-0">
-                                                <span className={cn(
-                                                  "font-black text-xs block truncate transition-colors uppercase tracking-tight",
-                                                  isSelected ? "text-white" : "text-slate-300"
-                                                )}>
+                                                <span
+                                                  className={cn(
+                                                    "font-black text-xs block truncate transition-colors uppercase tracking-tight",
+                                                    isSelected
+                                                      ? "text-white"
+                                                      : "text-slate-300",
+                                                  )}
+                                                >
                                                   {std.name}
                                                 </span>
                                                 <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest mt-0.5 block truncate">
-                                                  {completedCount} Hechas • {pendingCount} Pendiente{pendingCount !== 1 ? 's' : ''}
+                                                  {completedCount} Hechas •{" "}
+                                                  {pendingCount} Pendiente
+                                                  {pendingCount !== 1
+                                                    ? "s"
+                                                    : ""}
                                                 </span>
                                               </div>
                                             </div>
@@ -4315,7 +5579,15 @@ export default function App() {
                                                   {pendingCount}
                                                 </span>
                                               )}
-                                              <ChevronRight size={14} className={cn("transition-colors", isSelected ? "text-indigo-400" : "text-slate-600")} />
+                                              <ChevronRight
+                                                size={14}
+                                                className={cn(
+                                                  "transition-colors",
+                                                  isSelected
+                                                    ? "text-indigo-400"
+                                                    : "text-slate-600",
+                                                )}
+                                              />
                                             </div>
                                           </motion.button>
                                         );
@@ -4326,60 +5598,117 @@ export default function App() {
 
                                 {/* RIGHT COLUMN: Selected Student Workspace */}
                                 {(() => {
-                                  const studentsInSelectedGroup = globalStudents.filter(s => s.grade === selectedTeacherGroup);
-                                  const activeStudent = studentsInSelectedGroup.find(s => s.id === activeGroupStudentId) || studentsInSelectedGroup[0] || null;
+                                  const studentsInSelectedGroup =
+                                    globalStudents.filter(
+                                      (s) => s.grade === selectedTeacherGroup,
+                                    );
+                                  const activeStudent =
+                                    studentsInSelectedGroup.find(
+                                      (s) => s.id === activeGroupStudentId,
+                                    ) ||
+                                    studentsInSelectedGroup[0] ||
+                                    null;
 
                                   if (!activeStudent) return null;
 
                                   const studentData = activeStudent;
-                                  const yearKey = (studentData.grade?.[0] || "1") as Year;
+                                  const yearKey = (studentData.grade?.[0] ||
+                                    "1") as Year;
                                   const studentGrade = studentData.grade;
 
-                                  const hasIntegrationThisYear = (stats.assignedSubjects || []).some(s => {
-                                    const baseId = s.includes(':') ? s.split(':')[0] : s;
-                                    const group = s.includes(':') ? s.split(':')[1] : null;
-                                    return baseId === `int_cur_${yearKey}` && (!group || group === studentGrade);
+                                  const hasIntegrationThisYear = (
+                                    stats.assignedSubjects || []
+                                  ).some((s) => {
+                                    const baseId = s.includes(":")
+                                      ? s.split(":")[0]
+                                      : s;
+                                    const group = s.includes(":")
+                                      ? s.split(":")[1]
+                                      : null;
+                                    return (
+                                      baseId === `int_cur_${yearKey}` &&
+                                      (!group || group === studentGrade)
+                                    );
                                   });
 
-                                  const specificSubjectsForThisGrade = (stats.assignedSubjects || [])
-                                    .filter(s => s.includes(':') ? s.split(':')[1] === studentGrade : false)
-                                    .map(s => s.split(':')[0]);
+                                  const specificSubjectsForThisGrade = (
+                                    stats.assignedSubjects || []
+                                  )
+                                    .filter((s) =>
+                                      s.includes(":")
+                                        ? s.split(":")[1] === studentGrade
+                                        : false,
+                                    )
+                                    .map((s) => s.split(":")[0]);
 
-                                  const legacySubjects = (stats.assignedSubjects || [])
-                                    .filter(s => !s.includes(':'));
+                                  const legacySubjects = (
+                                    stats.assignedSubjects || []
+                                  ).filter((s) => !s.includes(":"));
 
-                                  const baseSubjects = [...new Set([...specificSubjectsForThisGrade, ...legacySubjects])];
+                                  const baseSubjects = [
+                                    ...new Set([
+                                      ...specificSubjectsForThisGrade,
+                                      ...legacySubjects,
+                                    ]),
+                                  ];
 
-                                  const subjectsToCheck = hasIntegrationThisYear 
-                                    ? (ACADEMIC_CONTENT[yearKey] || []).map(s => s.id)
+                                  const subjectsToCheck = hasIntegrationThisYear
+                                    ? (ACADEMIC_CONTENT[yearKey] || []).map(
+                                        (s) => s.id,
+                                      )
                                     : baseSubjects;
 
-                                  const totalTasks = (ACADEMIC_CONTENT[yearKey] || [])
-                                    .filter((s) => subjectsToCheck.includes(s.id))
-                                    .reduce((acc, s) => acc + s.topics.reduce((acc2, t) => acc2 + t.tasks.length, 0), 0);
-
-                                  const completedTasksCount = studentData.completedTasks.filter((taskId) =>
-                                    subjectsToCheck.some((subId) =>
-                                      (ACADEMIC_CONTENT[yearKey] || [])
-                                        .find((s) => s.id === subId)
-                                        ?.topics.some((t) => t.tasks.some((task) => task.id === taskId))
+                                  const totalTasks = (
+                                    ACADEMIC_CONTENT[yearKey] || []
+                                  )
+                                    .filter((s) =>
+                                      subjectsToCheck.includes(s.id),
                                     )
-                                  ).length;
+                                    .reduce(
+                                      (acc, s) =>
+                                        acc +
+                                        s.topics.reduce(
+                                          (acc2, t) => acc2 + t.tasks.length,
+                                          0,
+                                        ),
+                                      0,
+                                    );
 
-                                  const progress = totalTasks > 0 ? (completedTasksCount / totalTasks) * 100 : 0;
+                                  const completedTasksCount =
+                                    studentData.completedTasks.filter(
+                                      (taskId) =>
+                                        subjectsToCheck.some((subId) =>
+                                          (ACADEMIC_CONTENT[yearKey] || [])
+                                            .find((s) => s.id === subId)
+                                            ?.topics.some((t) =>
+                                              t.tasks.some(
+                                                (task) => task.id === taskId,
+                                              ),
+                                            ),
+                                        ),
+                                    ).length;
+
+                                  const progress =
+                                    totalTasks > 0
+                                      ? (completedTasksCount / totalTasks) * 100
+                                      : 0;
 
                                   // Academic Rank helper
                                   let rankName = "NÓMADA DEL CONOCIMIENTO";
-                                  let rankColor = "text-slate-400 bg-slate-500/10 border-slate-500/20";
+                                  let rankColor =
+                                    "text-slate-400 bg-slate-500/10 border-slate-500/20";
                                   if (activeStudent.tokens >= 200) {
                                     rankName = "LEYENDA ACADÉMICA";
-                                    rankColor = "text-amber-400 bg-amber-500/10 border-amber-500/20";
+                                    rankColor =
+                                      "text-amber-400 bg-amber-500/10 border-amber-500/20";
                                   } else if (activeStudent.tokens >= 100) {
                                     rankName = "ALQUIMISTA EXPERTO";
-                                    rankColor = "text-purple-400 bg-purple-500/10 border-purple-500/20";
+                                    rankColor =
+                                      "text-purple-400 bg-purple-500/10 border-purple-500/20";
                                   } else if (activeStudent.tokens >= 50) {
                                     rankName = "EXPLORADOR BRONCE";
-                                    rankColor = "text-indigo-400 bg-indigo-500/10 border-indigo-500/20";
+                                    rankColor =
+                                      "text-indigo-400 bg-indigo-500/10 border-indigo-500/20";
                                   }
 
                                   return (
@@ -4387,29 +5716,58 @@ export default function App() {
                                       {/* PROFILE CARD */}
                                       <div className="bg-slate-900/10 border border-slate-800/60 p-6 md:p-8 rounded-[2.5rem] relative overflow-hidden text-left">
                                         <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-indigo-500/5 to-transparent blur-3xl pointer-events-none" />
-                                        
+
                                         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
                                           <div className="flex items-center gap-4 text-left">
                                             <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-600 p-0.5 shadow-lg shadow-indigo-500/10 shrink-0">
                                               <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center overflow-hidden">
                                                 {activeStudent.avatar ? (
-                                                  <img src={activeStudent.avatar} alt={activeStudent.name} className="w-full h-full object-cover animate-fadeIn" referrerPolicy="no-referrer" />
+                                                  <img
+                                                    src={activeStudent.avatar}
+                                                    alt={activeStudent.name}
+                                                    className="w-full h-full object-cover animate-fadeIn"
+                                                    referrerPolicy="no-referrer"
+                                                  />
                                                 ) : (
-                                                  <span className="text-white font-black text-lg uppercase">{activeStudent.name.charAt(0)}</span>
+                                                  <span className="text-white font-black text-lg uppercase">
+                                                    {activeStudent.name.charAt(
+                                                      0,
+                                                    )}
+                                                  </span>
                                                 )}
                                               </div>
                                             </div>
                                             <div>
                                               <div className="flex flex-wrap items-center gap-2">
-                                                <h3 className="text-xl font-black text-white italic uppercase tracking-tight leading-none">{activeStudent.name}</h3>
-                                                <span className={cn("text-[8px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border", rankColor)}>
+                                                <h3 className="text-xl font-black text-white italic uppercase tracking-tight leading-none">
+                                                  {activeStudent.name}
+                                                </h3>
+                                                <span
+                                                  className={cn(
+                                                    "text-[8px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border",
+                                                    rankColor,
+                                                  )}
+                                                >
                                                   {rankName}
                                                 </span>
                                               </div>
                                               <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-1.5 flex items-center gap-3">
-                                                <span>Grado: <b className="text-slate-300 font-sans">{activeStudent.grade}</b></span>
+                                                <span>
+                                                  Grado:{" "}
+                                                  <b className="text-slate-300 font-sans">
+                                                    {activeStudent.grade}
+                                                  </b>
+                                                </span>
                                                 <span>•</span>
-                                                <span>ID Alumno: <b className="text-slate-300 font-sans">{activeStudent.id.substring(0, 8)}</b></span>
+                                                <span>
+                                                  ID Alumno:{" "}
+                                                  <b className="text-slate-300 font-sans">
+                                                    {activeStudent.id.substring(
+                                                      0,
+                                                      8,
+                                                    )}
+                                                  </b>
+                                                </span>
                                               </p>
                                             </div>
                                           </div>
@@ -4417,14 +5775,24 @@ export default function App() {
                                           <div className="w-full md:w-auto flex flex-col gap-1 shrink-0">
                                             <div className="w-full md:w-56 space-y-1 bg-slate-950/40 p-3 rounded-2xl border border-slate-900/80 shadow-inner">
                                               <div className="flex justify-between items-center text-[8px] font-black uppercase tracking-widest font-sans">
-                                                <span className="text-slate-400 font-sans">Progreso de Curso</span>
-                                                <span className="text-indigo-400 font-mono">{Math.round(progress)}%</span>
+                                                <span className="text-slate-400 font-sans">
+                                                  Progreso de Curso
+                                                </span>
+                                                <span className="text-indigo-400 font-mono">
+                                                  {Math.round(progress)}%
+                                                </span>
                                               </div>
                                               <div className="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
-                                                <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-700" style={{ width: `${progress}%` }} />
+                                                <div
+                                                  className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-700"
+                                                  style={{
+                                                    width: `${progress}%`,
+                                                  }}
+                                                />
                                               </div>
                                               <div className="text-[7.5px] font-semibold text-slate-500 text-right uppercase tracking-[0.05em] font-sans">
-                                                {completedTasksCount} de {totalTasks} aprobados
+                                                {completedTasksCount} de{" "}
+                                                {totalTasks} aprobados
                                               </div>
                                             </div>
                                           </div>
@@ -4434,11 +5802,18 @@ export default function App() {
                                         <div className="grid grid-cols-3 gap-3 mt-6 pt-6 border-t border-slate-800/50">
                                           <div className="bg-slate-950/50 border border-slate-900 p-3 rounded-2xl flex items-center gap-3 hover:border-slate-800 transition-colors">
                                             <div className="w-10 h-10 bg-amber-500/10 text-amber-500 rounded-xl flex items-center justify-center font-sans">
-                                              <Flame size={16} className="animate-pulse" />
+                                              <Flame
+                                                size={16}
+                                                className="animate-pulse"
+                                              />
                                             </div>
                                             <div className="flex flex-col text-left">
-                                              <span className="text-[8px] font-black uppercase text-slate-500 tracking-wider font-sans">Estudio Activo</span>
-                                              <span className="text-xs sm:text-sm font-black text-white">{activeStudent.streak} Dientes</span>
+                                              <span className="text-[8px] font-black uppercase text-slate-500 tracking-wider font-sans">
+                                                Estudio Activo
+                                              </span>
+                                              <span className="text-xs sm:text-sm font-black text-white">
+                                                {activeStudent.streak} Dientes
+                                              </span>
                                             </div>
                                           </div>
 
@@ -4447,8 +5822,12 @@ export default function App() {
                                               <Coins size={16} />
                                             </div>
                                             <div className="flex flex-col text-left">
-                                              <span className="text-[8px] font-black uppercase text-slate-500 tracking-wider font-sans">Fichas Clave</span>
-                                              <span className="text-xs sm:text-sm font-black text-white">{activeStudent.tokens} 🪙</span>
+                                              <span className="text-[8px] font-black uppercase text-slate-500 tracking-wider font-sans">
+                                                Fichas Clave
+                                              </span>
+                                              <span className="text-xs sm:text-sm font-black text-white">
+                                                {activeStudent.tokens} 🪙
+                                              </span>
                                             </div>
                                           </div>
 
@@ -4457,8 +5836,18 @@ export default function App() {
                                               <Trophy size={16} />
                                             </div>
                                             <div className="flex flex-col text-left">
-                                              <span className="text-[8px] font-black uppercase text-slate-500 tracking-wider font-sans">Colección</span>
-                                              <span className="text-xs sm:text-sm font-black text-white">{(activeStudent.collection || []).length} Cartas</span>
+                                              <span className="text-[8px] font-black uppercase text-slate-500 tracking-wider font-sans">
+                                                Colección
+                                              </span>
+                                              <span className="text-xs sm:text-sm font-black text-white">
+                                                {
+                                                  (
+                                                    activeStudent.collection ||
+                                                    []
+                                                  ).length
+                                                }{" "}
+                                                Cartas
+                                              </span>
                                             </div>
                                           </div>
                                         </div>
@@ -4467,34 +5856,66 @@ export default function App() {
                                       {/* QUICK MOTIVAL ENCOURAGEMENT BOX */}
                                       <div className="bg-gradient-to-r from-indigo-950/10 to-indigo-900/5 border border-indigo-500/20 p-5 rounded-[2.2rem] space-y-4 text-left">
                                         <div className="flex items-center gap-2">
-                                          <Sparkles size={14} className="text-indigo-400" />
+                                          <Sparkles
+                                            size={14}
+                                            className="text-indigo-400"
+                                          />
                                           <h4 className="text-[10px] font-black uppercase text-indigo-300 tracking-[0.1em] font-sans">
-                                            Canal de Reconocimiento y Motivación Rápida
+                                            Canal de Reconocimiento y Motivación
+                                            Rápida
                                           </h4>
                                         </div>
                                         <p className="text-[10px] text-slate-400 font-medium">
-                                          Envía un mensaje de motivación inmediato al alumno. Genera una notificación en tiempo real y le otorga de forma pedagógica <b className="text-amber-400">+10 fichas</b> de estímulo.
+                                          Envía un mensaje de motivación
+                                          inmediato al alumno. Genera una
+                                          notificación en tiempo real y le
+                                          otorga de forma pedagógica{" "}
+                                          <b className="text-amber-400">
+                                            +10 fichas
+                                          </b>{" "}
+                                          de estímulo.
                                         </p>
 
                                         {/* PRESET PILLS FOR RECOGNITION */}
                                         <div className="flex flex-wrap gap-2.5">
                                           <button
-                                            onClick={() => handleSendEncouragement(activeStudent.id, "¡Excelente originalidad en el desarrollo de tus respuestas y gran análisis de la información! 🎉")}
+                                            onClick={() =>
+                                              handleSendEncouragement(
+                                                activeStudent.id,
+                                                "¡Excelente originalidad en el desarrollo de tus respuestas y gran análisis de la información! 🎉",
+                                              )
+                                            }
                                             className="bg-indigo-950/40 border border-indigo-900 hover:border-indigo-500 text-indigo-300 hover:text-white px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5"
                                           >
-                                            <span>🎨 ¡Felicitar Originalidad!</span>
+                                            <span>
+                                              🎨 ¡Felicitar Originalidad!
+                                            </span>
                                           </button>
                                           <button
-                                            onClick={() => handleSendEncouragement(activeStudent.id, "¡Muy bien estructurados los argumentos y el razonamiento analítico dentro de la misión! 💡")}
+                                            onClick={() =>
+                                              handleSendEncouragement(
+                                                activeStudent.id,
+                                                "¡Muy bien estructurados los argumentos y el razonamiento analítico dentro de la misión! 💡",
+                                              )
+                                            }
                                             className="bg-indigo-950/40 border border-indigo-900 hover:border-indigo-500 text-indigo-300 hover:text-white px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5"
                                           >
-                                            <span>💡 ¡Felicitar Razonamiento!</span>
+                                            <span>
+                                              💡 ¡Felicitar Razonamiento!
+                                            </span>
                                           </button>
                                           <button
-                                            onClick={() => handleSendEncouragement(activeStudent.id, "¡Sigue adelante con esa perseverancia y excelente racha de estudio diaria! 🚀")}
+                                            onClick={() =>
+                                              handleSendEncouragement(
+                                                activeStudent.id,
+                                                "¡Sigue adelante con esa perseverancia y excelente racha de estudio diaria! 🚀",
+                                              )
+                                            }
                                             className="bg-indigo-950/40 border border-indigo-900 hover:border-indigo-500 text-indigo-300 hover:text-white px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5"
                                           >
-                                            <span>🔥 ¡Felicitar Perseverancia!</span>
+                                            <span>
+                                              🔥 ¡Felicitar Perseverancia!
+                                            </span>
                                           </button>
                                         </div>
 
@@ -4503,17 +5924,28 @@ export default function App() {
                                           <input
                                             type="text"
                                             value={customMotivationText}
-                                            onChange={(e) => setCustomMotivationText(e.target.value)}
+                                            onChange={(e) =>
+                                              setCustomMotivationText(
+                                                e.target.value,
+                                              )
+                                            }
                                             placeholder="Escribe un mensaje de felicitación e incentivo personalizado..."
                                             className="w-full bg-slate-900/60 border border-slate-800 placeholder:text-slate-600 focus:border-indigo-500 focus:outline-none rounded-xl p-2.5 text-xs font-semibold text-white transition-all text-left"
                                           />
                                           <button
                                             onClick={() => {
-                                              if (!customMotivationText.trim()) {
-                                                toast.error("Por favor, escribe un mensaje personalizado.");
+                                              if (
+                                                !customMotivationText.trim()
+                                              ) {
+                                                toast.error(
+                                                  "Por favor, escribe un mensaje personalizado.",
+                                                );
                                                 return;
                                               }
-                                              handleSendEncouragement(activeStudent.id, customMotivationText);
+                                              handleSendEncouragement(
+                                                activeStudent.id,
+                                                customMotivationText,
+                                              );
                                               setCustomMotivationText("");
                                             }}
                                             className="bg-indigo-600 hover:bg-indigo-500 text-white p-2.5 px-4 rounded-xl text-[9px] font-black uppercase tracking-wider shrink-0 transition-transform active:scale-95 cursor-pointer flex items-center gap-1 font-sans border border-indigo-400/20"
@@ -4526,78 +5958,133 @@ export default function App() {
                                       {/* SECTION: Pendientes de Revisión */}
                                       <div className="space-y-4 text-left">
                                         <div className="flex items-center gap-2 px-1 border-b border-slate-800 pb-2">
-                                          <Clock size={14} className="text-amber-500" />
+                                          <Clock
+                                            size={14}
+                                            className="text-amber-500"
+                                          />
                                           <h4 className="text-xs font-black uppercase text-slate-200 tracking-wider">
-                                            Actividades Pendientes de Revisión ({(activeStudent.pendingTasks || []).length})
+                                            Actividades Pendientes de Revisión (
+                                            {
+                                              (activeStudent.pendingTasks || [])
+                                                .length
+                                            }
+                                            )
                                           </h4>
                                         </div>
 
-                                        {(!activeStudent.pendingTasks || activeStudent.pendingTasks.length === 0) ? (
+                                        {!activeStudent.pendingTasks ||
+                                        activeStudent.pendingTasks.length ===
+                                          0 ? (
                                           <div className="bg-slate-900/10 border border-slate-800/40 p-10 rounded-3xl flex flex-col items-center justify-center text-center text-slate-500 font-bold text-[11px] gap-2 uppercase tracking-widest w-full">
-                                            <CheckCircle2 size={24} className="text-emerald-500/70" />
-                                            <span className="font-sans">Sin pendientes por calificar para este alumno.</span>
+                                            <CheckCircle2
+                                              size={24}
+                                              className="text-emerald-500/70"
+                                            />
+                                            <span className="font-sans">
+                                              Sin pendientes por calificar para
+                                              este alumno.
+                                            </span>
                                           </div>
                                         ) : (
                                           <div className="space-y-4">
-                                            {activeStudent.pendingTasks.map((tId) => {
-                                              const details = lookupTaskDetails(tId);
-                                              if (!details) return null;
+                                            {Array.from(new Set(activeStudent.pendingTasks)).map(
+                                              (tId) => {
+                                                const details =
+                                                  lookupTaskDetails(tId);
+                                                if (!details) return null;
 
-                                              return (
-                                                <div key={tId} className="bg-slate-950 border border-slate-900 p-5 rounded-3xl space-y-4 relative overflow-hidden">
-                                                  <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-indigo-500/5 to-transparent rounded-bl-3xl"></div>
-                                                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5">
-                                                    <div>
-                                                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                                                        <span className="text-[8px] font-black uppercase tracking-widest text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-md border border-indigo-500/20">
-                                                          {details.subject.name}
-                                                        </span>
-                                                        <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 bg-slate-900 px-2 py-0.5 rounded-md border border-slate-800">
-                                                          {details.topicName}
-                                                        </span>
+                                                return (
+                                                  <div
+                                                    key={tId}
+                                                    className="bg-slate-950 border border-slate-900 p-5 rounded-3xl space-y-4 relative overflow-hidden"
+                                                  >
+                                                    <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-indigo-500/5 to-transparent rounded-bl-3xl"></div>
+                                                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5">
+                                                      <div>
+                                                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                                                          <span className="text-[8px] font-black uppercase tracking-widest text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-md border border-indigo-500/20">
+                                                            {
+                                                              details.subject
+                                                                .name
+                                                            }
+                                                          </span>
+                                                          <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 bg-slate-900 px-2 py-0.5 rounded-md border border-slate-800">
+                                                            {details.topicName}
+                                                          </span>
+                                                        </div>
+                                                        <h5 className="font-extrabold text-sm text-white uppercase tracking-wide leading-tight">
+                                                          {details.task.title}
+                                                        </h5>
+                                                        <p className="text-[11px] text-slate-400 mt-1 italic">
+                                                          {
+                                                            details.task
+                                                              .description
+                                                          }
+                                                        </p>
                                                       </div>
-                                                      <h5 className="font-extrabold text-sm text-white uppercase tracking-wide leading-tight">
-                                                        {details.task.title}
-                                                      </h5>
-                                                      <p className="text-[11px] text-slate-400 mt-1 italic">
-                                                        {details.task.description}
-                                                      </p>
+
+                                                      <div className="flex items-center gap-2 self-start bg-slate-900 border border-slate-800 p-1 px-2.5 rounded-xl text-[10px] font-black font-mono text-amber-400">
+                                                        <span>
+                                                          +
+                                                          {
+                                                            details.task.reward
+                                                              .tokens
+                                                          }
+                                                        </span>
+                                                        <span>🪙</span>
+                                                      </div>
                                                     </div>
 
-                                                    <div className="flex items-center gap-2 self-start bg-slate-900 border border-slate-800 p-1 px-2.5 rounded-xl text-[10px] font-black font-mono text-amber-400">
-                                                      <span>+{details.task.reward.tokens}</span>
-                                                      <span>🪙</span>
+                                                    <div className="space-y-3 pt-2.5 border-t border-slate-900">
+                                                      <div>
+                                                        <span className="text-[7.5px] font-black text-slate-500 uppercase tracking-widest block mb-1">
+                                                          Evidencia Entregada
+                                                        </span>
+                                                        <div className="text-[11px] text-slate-300 leading-relaxed font-semibold italic bg-slate-900/60 border border-slate-900 p-3.5 rounded-2xl border-l-[3px] border-l-indigo-500 text-left">
+                                                          "Desafío completado
+                                                          con éxito. Se
+                                                          justificaron las
+                                                          respuestas aplicando
+                                                          el proceso pedagógico
+                                                          sugerido. Listo para
+                                                          revisión."
+                                                        </div>
+                                                      </div>
+
+                                                      <div className="flex flex-col sm:flex-row gap-2 items-center w-full">
+                                                        <input
+                                                          type="text"
+                                                          value={
+                                                            groupDirectFeedback
+                                                          }
+                                                          onChange={(e) =>
+                                                            setGroupDirectFeedback(
+                                                              e.target.value,
+                                                            )
+                                                          }
+                                                          placeholder="Escribe una retroalimentación opcional (Ej: ¡Excelente respuesta!)..."
+                                                          className="w-full bg-slate-900 border border-slate-800 focus:border-indigo-500 rounded-xl p-3 text-xs font-semibold text-white focus:outline-none transition-all placeholder:text-slate-750 text-left text-xs"
+                                                        />
+                                                        <button
+                                                          onClick={() =>
+                                                            handleDirectApprove(
+                                                              activeStudent.id,
+                                                              tId,
+                                                            )
+                                                          }
+                                                          className="w-full sm:w-auto px-5 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-black uppercase text-[9px] tracking-wider rounded-xl transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 shrink-0 border border-indigo-400/30 cursor-pointer font-sans"
+                                                        >
+                                                          <CheckCircle2
+                                                            size={13}
+                                                          />
+                                                          Aprobar
+                                                        </button>
+                                                      </div>
                                                     </div>
                                                   </div>
-
-                                                  <div className="space-y-3 pt-2.5 border-t border-slate-900">
-                                                    <div>
-                                                      <span className="text-[7.5px] font-black text-slate-500 uppercase tracking-widest block mb-1">Evidencia Entregada</span>
-                                                      <div className="text-[11px] text-slate-300 leading-relaxed font-semibold italic bg-slate-900/60 border border-slate-900 p-3.5 rounded-2xl border-l-[3px] border-l-indigo-500 text-left">
-                                                        "Desafío completado con éxito. Se justificaron las respuestas aplicando el proceso pedagógico sugerido. Listo para revisión."
-                                                      </div>
-                                                    </div>
-
-                                                    <div className="flex flex-col sm:flex-row gap-2 items-center w-full">
-                                                      <input
-                                                        type="text"
-                                                        value={groupDirectFeedback}
-                                                        onChange={(e) => setGroupDirectFeedback(e.target.value)}
-                                                        placeholder="Escribe una retroalimentación opcional (Ej: ¡Excelente respuesta!)..."
-                                                        className="w-full bg-slate-900 border border-slate-800 focus:border-indigo-500 rounded-xl p-3 text-xs font-semibold text-white focus:outline-none transition-all placeholder:text-slate-750 text-left text-xs"
-                                                      />
-                                                      <button
-                                                        onClick={() => handleDirectApprove(activeStudent.id, tId)}
-                                                        className="w-full sm:w-auto px-5 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-black uppercase text-[9px] tracking-wider rounded-xl transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 shrink-0 border border-indigo-400/30 cursor-pointer font-sans"
-                                                      >
-                                                        <CheckCircle2 size={13} />
-                                                        Aprobar
-                                                      </button>
-                                                    </div>
-                                                  </div>
-                                                </div>
-                                              );
-                                            })}
+                                                );
+                                              },
+                                            )}
                                           </div>
                                         )}
                                       </div>
@@ -4605,40 +6092,68 @@ export default function App() {
                                       {/* SECTION: Actividades Realizadas */}
                                       <div className="space-y-4 text-left">
                                         <div className="flex items-center gap-2 px-1 border-b border-slate-800 pb-2">
-                                          <CheckCircle2 size={14} className="text-emerald-400" />
+                                          <CheckCircle2
+                                            size={14}
+                                            className="text-emerald-400"
+                                          />
                                           <h4 className="text-xs font-black uppercase text-slate-200 tracking-wider">
-                                            Actividades Realizadas ({activeStudent.completedTasks.length})
+                                            Actividades Realizadas (
+                                            {
+                                              activeStudent.completedTasks
+                                                .length
+                                            }
+                                            )
                                           </h4>
                                         </div>
 
-                                        {activeStudent.completedTasks.length === 0 ? (
+                                        {activeStudent.completedTasks.length ===
+                                        0 ? (
                                           <div className="bg-slate-900/10 border border-slate-800/40 p-10 rounded-3xl flex flex-col items-center justify-center text-center text-slate-500 font-bold text-[11px] gap-2 uppercase tracking-widest w-full">
-                                            <span className="font-sans">Sin registros. El estudiante no ha completado actividades aún.</span>
+                                            <span className="font-sans">
+                                              Sin registros. El estudiante no ha
+                                              completado actividades aún.
+                                            </span>
                                           </div>
                                         ) : (
                                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full animate-fadeIn">
-                                            {activeStudent.completedTasks.map((tId) => {
-                                              const details = lookupTaskDetails(tId);
-                                              if (!details) return null;
+                                            {Array.from(new Set(activeStudent.completedTasks)).map(
+                                              (tId) => {
+                                                const details =
+                                                  lookupTaskDetails(tId);
+                                                if (!details) return null;
 
-                                              return (
-                                                <div key={tId} className="bg-slate-950 border border-slate-900 p-4 rounded-2xl flex items-start gap-3 hover:border-slate-800 transition-all text-left">
-                                                  <CheckCircle2 size={14} className="text-emerald-400 mt-0.5 shrink-0" />
-                                                  <div className="min-w-0 flex-1 text-left">
-                                                    <span className="text-[7.5px] font-black uppercase tracking-wider text-slate-500 block truncate">
-                                                      {details.subject.name} • {details.topicName}
-                                                    </span>
-                                                    <span className="font-extrabold text-xs text-slate-200 uppercase tracking-wide block truncate mt-0.5 font-sans">
-                                                      {details.task.title}
-                                                    </span>
-                                                    <div className="flex items-center gap-1.5 mt-1 font-mono text-[9px] text-amber-400 font-bold">
-                                                      <span>+{details.task.reward.tokens}</span>
-                                                      <span>🪙</span>
+                                                return (
+                                                  <div
+                                                    key={tId}
+                                                    className="bg-slate-950 border border-slate-900 p-4 rounded-2xl flex items-start gap-3 hover:border-slate-800 transition-all text-left"
+                                                  >
+                                                    <CheckCircle2
+                                                      size={14}
+                                                      className="text-emerald-400 mt-0.5 shrink-0"
+                                                    />
+                                                    <div className="min-w-0 flex-1 text-left">
+                                                      <span className="text-[7.5px] font-black uppercase tracking-wider text-slate-500 block truncate">
+                                                        {details.subject.name} •{" "}
+                                                        {details.topicName}
+                                                      </span>
+                                                      <span className="font-extrabold text-xs text-slate-200 uppercase tracking-wide block truncate mt-0.5 font-sans">
+                                                        {details.task.title}
+                                                      </span>
+                                                      <div className="flex items-center gap-1.5 mt-1 font-mono text-[9px] text-amber-400 font-bold">
+                                                        <span>
+                                                          +
+                                                          {
+                                                            details.task.reward
+                                                              .tokens
+                                                          }
+                                                        </span>
+                                                        <span>🪙</span>
+                                                      </div>
                                                     </div>
                                                   </div>
-                                                </div>
-                                              );
-                                            })}
+                                                );
+                                              },
+                                            )}
                                           </div>
                                         )}
                                       </div>
@@ -4664,9 +6179,14 @@ export default function App() {
 
                             {(() => {
                               const assigned = stats.assignedSubjects || [];
-                              const hasIntegration = assigned.some((sid) => sid.startsWith("int_cur_"));
+                              const hasIntegration = assigned.some((sid) =>
+                                sid.startsWith("int_cur_"),
+                              );
 
-                              let subjectNamesWithIds: { id: string; name: string }[] = [];
+                              let subjectNamesWithIds: {
+                                id: string;
+                                name: string;
+                              }[] = [];
 
                               if (hasIntegration) {
                                 // Handle Integration Curricular
@@ -4674,78 +6194,131 @@ export default function App() {
                                   .filter((sid) => sid.startsWith("int_cur_"))
                                   .map((sid) => sid.split("_")[2]);
 
-                                const allUniqueSubjects = new Map<string, string>();
+                                const allUniqueSubjects = new Map<
+                                  string,
+                                  string
+                                >();
                                 integratedYears.forEach((year) => {
-                                  const content = ACADEMIC_CONTENT[year as Year] || [];
-                                  content.forEach((s) => allUniqueSubjects.set(s.id, s.name));
+                                  const content =
+                                    ACADEMIC_CONTENT[year as Year] || [];
+                                  content.forEach((s) =>
+                                    allUniqueSubjects.set(s.id, s.name),
+                                  );
                                 });
 
                                 assigned.forEach((sid) => {
                                   // Extract base ID if it's the new format subjectId:groupId
-                                  const baseId = sid.includes(":") ? sid.split(":")[0] : sid;
+                                  const baseId = sid.includes(":")
+                                    ? sid.split(":")[0]
+                                    : sid;
                                   for (const y in ACADEMIC_CONTENT) {
-                                    const s = (ACADEMIC_CONTENT[y as Year] || []).find((sub) => sub.id === baseId);
-                                    if (s) allUniqueSubjects.set(baseId, s.name);
+                                    const s = (
+                                      ACADEMIC_CONTENT[y as Year] || []
+                                    ).find((sub) => sub.id === baseId);
+                                    if (s)
+                                      allUniqueSubjects.set(baseId, s.name);
                                   }
                                 });
 
-                                subjectNamesWithIds = Array.from(allUniqueSubjects.entries()).map(([id, name]) => ({ id, name }));
+                                subjectNamesWithIds = Array.from(
+                                  allUniqueSubjects.entries(),
+                                ).map(([id, name]) => ({ id, name }));
                               } else {
-                                const uniqueBaseIds = Array.from(new Set(assigned.map((sid) => (sid.includes(":") ? sid.split(":")[0] : sid))));
+                                const uniqueBaseIds = Array.from(
+                                  new Set(
+                                    assigned.map((sid) =>
+                                      sid.includes(":")
+                                        ? sid.split(":")[0]
+                                        : sid,
+                                    ),
+                                  ),
+                                );
                                 subjectNamesWithIds = uniqueBaseIds
                                   .map((sid) => {
                                     for (const year in ACADEMIC_CONTENT) {
-                                      const yearContent = ACADEMIC_CONTENT[year as Year];
+                                      const yearContent =
+                                        ACADEMIC_CONTENT[year as Year];
                                       if (yearContent) {
-                                        const sub = yearContent.find((s) => s.id === sid);
-                                        if (sub) return { id: sid, name: sub.name };
+                                        const sub = yearContent.find(
+                                          (s) => s.id === sid,
+                                        );
+                                        if (sub)
+                                          return { id: sid, name: sub.name };
                                       }
                                     }
                                     return null;
                                   })
-                                  .filter((x): x is { id: string; name: string } => x !== null);
+                                  .filter(
+                                    (x): x is { id: string; name: string } =>
+                                      x !== null,
+                                  );
                               }
 
                               return subjectNamesWithIds.map((subjectInfo) => {
                                 if (!subjectInfo) return null;
-                                const { id: sid, name: subjectName } = subjectInfo;
+                                const { id: sid, name: subjectName } =
+                                  subjectInfo;
 
                                 let subjectYear = "1";
                                 for (const y in ACADEMIC_CONTENT) {
-                                  const yearContent = ACADEMIC_CONTENT[y as Year];
-                                  if (yearContent && yearContent.some((sub) => sub.id === sid)) {
+                                  const yearContent =
+                                    ACADEMIC_CONTENT[y as Year];
+                                  if (
+                                    yearContent &&
+                                    yearContent.some((sub) => sub.id === sid)
+                                  ) {
                                     subjectYear = y;
                                     break;
                                   }
                                 }
-                                
+
                                 // New granular logic:
                                 // If there's any mapping for this subject in the format 'subjectId:groupId', use those.
                                 // Otherwise, fall back to matching by year.
-                                const specificMappings = (stats.assignedSubjects || [])
-                                  .filter(s => s.startsWith(`${sid}:`))
-                                  .map(s => s.split(':')[1]);
-                                
-                                const groupsForSubject = specificMappings.length > 0
-                                  ? specificMappings
-                                  : (stats.assignedGroups || []).filter((g) => g.startsWith(subjectYear));
+                                const specificMappings = (
+                                  stats.assignedSubjects || []
+                                )
+                                  .filter((s) => s.startsWith(`${sid}:`))
+                                  .map((s) => s.split(":")[1]);
+
+                                const groupsForSubject =
+                                  specificMappings.length > 0
+                                    ? specificMappings
+                                    : (stats.assignedGroups || []).filter((g) =>
+                                        g.startsWith(subjectYear),
+                                      );
 
                                 if (groupsForSubject.length === 0) return null;
 
                                 return (
-                                  <div key={sid} className="space-y-4 bg-slate-900/40 p-6 sm:p-8 rounded-[2rem] border border-slate-800/60 shadow-inner">
+                                  <div
+                                    key={sid}
+                                    className="space-y-4 bg-slate-900/40 p-6 sm:p-8 rounded-[2rem] border border-slate-800/60 shadow-inner"
+                                  >
                                     <h3 className="text-lg font-black italic uppercase tracking-tighter text-slate-100 flex items-center gap-3 border-b border-slate-800/80 pb-3">
-                                      <BookOpenCheck size={18} className="text-indigo-400" />
-                                      {subjectName} <span className="text-slate-500 font-medium text-xs font-sans not-italic">({subjectYear}º Año)</span>
+                                      <BookOpenCheck
+                                        size={18}
+                                        className="text-indigo-400"
+                                      />
+                                      {subjectName}{" "}
+                                      <span className="text-slate-500 font-medium text-xs font-sans not-italic">
+                                        ({subjectYear}º Año)
+                                      </span>
                                     </h3>
                                     <div className="flex flex-wrap gap-3 pt-1">
                                       {groupsForSubject.map((group) => {
-                                        const isSelected = selectedTeacherGroup === group;
-                                        const studentCount = globalStudents.filter((s) => s.grade === group).length;
+                                        const isSelected =
+                                          selectedTeacherGroup === group;
+                                        const studentCount =
+                                          globalStudents.filter(
+                                            (s) => s.grade === group,
+                                          ).length;
                                         return (
                                           <button
                                             key={group}
-                                            onClick={() => setSelectedTeacherGroup(group)}
+                                            onClick={() =>
+                                              setSelectedTeacherGroup(group)
+                                            }
                                             className={cn(
                                               "relative group/btn overflow-hidden px-6 py-4 rounded-2xl flex items-center gap-4 transition-all border text-left min-w-[120px] justify-between cursor-pointer",
                                               isSelected
@@ -4757,7 +6330,9 @@ export default function App() {
                                               <span
                                                 className={cn(
                                                   "font-black tracking-tight text-2xl",
-                                                  isSelected ? "text-cyan-400" : "text-slate-100",
+                                                  isSelected
+                                                    ? "text-cyan-400"
+                                                    : "text-slate-100",
                                                 )}
                                               >
                                                 {group}
@@ -4765,17 +6340,23 @@ export default function App() {
                                               <span
                                                 className={cn(
                                                   "text-[8px] font-black uppercase tracking-wider mt-0.5",
-                                                  isSelected ? "text-indigo-400" : "text-slate-500",
+                                                  isSelected
+                                                    ? "text-indigo-400"
+                                                    : "text-slate-500",
                                                 )}
                                               >
                                                 Alumnos
                                               </span>
                                             </div>
-                                            
-                                            <div className={cn(
-                                              "w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs transition-colors",
-                                              isSelected ? "bg-indigo-500 text-white" : "bg-slate-900 text-slate-400 group-hover/btn:bg-slate-800 group-hover/btn:text-slate-200"
-                                            )}>
+
+                                            <div
+                                              className={cn(
+                                                "w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs transition-colors",
+                                                isSelected
+                                                  ? "bg-indigo-500 text-white"
+                                                  : "bg-slate-900 text-slate-400 group-hover/btn:bg-slate-800 group-hover/btn:text-slate-200",
+                                              )}
+                                            >
                                               {studentCount}
                                             </div>
                                           </button>
@@ -4798,7 +6379,9 @@ export default function App() {
                         packs={INITIAL_PACKS}
                         role={stats.role}
                         onRedeemReward={(card) => {
-                          toast.success(`¡Carta canjeada! Muestra esto a tu profesor: ${card.name}`);
+                          toast.success(
+                            `¡Carta canjeada! Muestra esto a tu profesor: ${card.name}`,
+                          );
                         }}
                       />
                     )}
@@ -4830,123 +6413,128 @@ export default function App() {
                       <div className="flex-1 overflow-y-auto transform-gpu w-full no-scrollbar px-2 sm:px-4 pb-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8 max-w-6xl mx-auto items-stretch pt-2">
                           {packs.map((pack) => (
-                          <div
-                            key={pack.id}
-                            className="bg-slate-900 border border-slate-800 rounded-[2.5rem] md:rounded-[3rem] p-8 md:p-10 shadow-md flex flex-col justify-between group hover:border-indigo-500/30 transition-all hover:-translate-y-2"
-                          >
-                            <div className="space-y-6">
-                              <div
-                                className={cn(
-                                  "w-32 h-48 mx-auto flex flex-col items-center justify-center shadow-lg relative overflow-hidden bg-slate-800 rounded-xl",
-                                  pack.id === "pack_jacobo"
-                                    ? "bg-gradient-to-b from-slate-400 via-slate-600 to-slate-800 border border-slate-500/50"
-                                    : pack.id === "pack_culiacan"
-                                      ? "bg-gradient-to-b from-indigo-400 via-indigo-600 to-indigo-900 border border-indigo-400/50"
-                                      : "bg-gradient-to-b from-amber-400 via-amber-600 to-amber-900 border border-amber-400/50",
-                                )}
-                              >
+                            <div
+                              key={pack.id}
+                              className="bg-slate-900 border border-slate-800 rounded-[2.5rem] md:rounded-[3rem] p-8 md:p-10 shadow-md flex flex-col justify-between group hover:border-indigo-500/30 transition-all hover:-translate-y-2"
+                            >
+                              <div className="space-y-6">
                                 <div
-                                  className="absolute top-0 left-0 w-full h-3 bg-black/20 border-b border-white/10 z-20"
-                                  style={{
-                                    backgroundImage:
-                                      "repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(0,0,0,0.3) 2px, rgba(0,0,0,0.3) 4px)",
-                                  }}
-                                ></div>
-                                <div
-                                  className="absolute bottom-0 left-0 w-full h-3 bg-black/20 border-t border-white/10 z-20"
-                                  style={{
-                                    backgroundImage:
-                                      "repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(0,0,0,0.3) 2px, rgba(0,0,0,0.3) 4px)",
-                                  }}
-                                ></div>
-
-                                <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/30 to-transparent opacity-60 z-10 pointer-events-none"></div>
-
-                                <img
-                                src={
+                                  className={cn(
+                                    "w-32 h-48 mx-auto flex flex-col items-center justify-center shadow-lg relative overflow-hidden bg-slate-800 rounded-xl",
                                     pack.id === "pack_jacobo"
-                                      ? "https://images.unsplash.com/photo-1580582932707-520aed937b7b?q=80&w=600&auto=format&fit=crop"
+                                      ? "bg-gradient-to-b from-slate-400 via-slate-600 to-slate-800 border border-slate-500/50"
                                       : pack.id === "pack_culiacan"
-                                        ? "https://upload.wikimedia.org/wikipedia/commons/4/4e/Vista_panor%C3%A1mica_de_Culiac%C3%A1n.jpg"
-                                        : "https://images.unsplash.com/photo-1528605248644-14dd04022da1?q=80&w=600&auto=format&fit=crop"
-                                  }
-                                  alt={pack.name}
-                                  className="absolute inset-1.5 top-5 bottom-5 w-[calc(100%-12px)] h-[calc(100%-40px)] object-cover rounded opacity-90 border border-white/20 shadow-inner"
-                                />
-                                <div className="absolute inset-1.5 top-5 bottom-5 bg-gradient-to-t from-black/80 via-black/10 to-transparent rounded pointer-events-none" />
+                                        ? "bg-gradient-to-b from-indigo-400 via-indigo-600 to-indigo-900 border border-indigo-400/50"
+                                        : "bg-gradient-to-b from-amber-400 via-amber-600 to-amber-900 border border-amber-400/50",
+                                  )}
+                                >
+                                  <div
+                                    className="absolute top-0 left-0 w-full h-3 bg-black/20 border-b border-white/10 z-20"
+                                    style={{
+                                      backgroundImage:
+                                        "repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(0,0,0,0.3) 2px, rgba(0,0,0,0.3) 4px)",
+                                    }}
+                                  ></div>
+                                  <div
+                                    className="absolute bottom-0 left-0 w-full h-3 bg-black/20 border-t border-white/10 z-20"
+                                    style={{
+                                      backgroundImage:
+                                        "repeating-linear-gradient(90deg, transparent, transparent 2px, rgba(0,0,0,0.3) 2px, rgba(0,0,0,0.3) 4px)",
+                                    }}
+                                  ></div>
 
-                                {pack.active && (
-                                  <div className="absolute top-4 right-2 w-2.5 h-2.5 bg-emerald-500 rounded-full shadow-lg z-30 ring-2 ring-white/20"></div>
-                                )}
-                                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full text-center z-20 px-1  mt-2">
-                                  <span
-                                    className={cn(
-                                      "text-2xl font-black italic uppercase tracking-tighter leading-none block",
+                                  <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/30 to-transparent opacity-60 z-10 pointer-events-none"></div>
+
+                                  <img
+                                    src={
                                       pack.id === "pack_jacobo"
-                                        ? "text-slate-100 "
+                                        ? "https://images.unsplash.com/photo-1580582932707-520aed937b7b?q=80&w=600&auto=format&fit=crop"
                                         : pack.id === "pack_culiacan"
-                                          ? "text-indigo-100 "
-                                          : "text-amber-100 ",
-                                    )}
-                                  >
-                                    {pack.name.replace(
-                                      /^Sobrecitos (de )?/i,
-                                      "",
-                                    )}
-                                  </span>
+                                          ? "https://upload.wikimedia.org/wikipedia/commons/4/4e/Vista_panor%C3%A1mica_de_Culiac%C3%A1n.jpg"
+                                          : "https://images.unsplash.com/photo-1528605248644-14dd04022da1?q=80&w=600&auto=format&fit=crop"
+                                    }
+                                    alt={pack.name}
+                                    className="absolute inset-1.5 top-5 bottom-5 w-[calc(100%-12px)] h-[calc(100%-40px)] object-cover rounded opacity-90 border border-white/20 shadow-inner"
+                                  />
+                                  <div className="absolute inset-1.5 top-5 bottom-5 bg-gradient-to-t from-black/80 via-black/10 to-transparent rounded pointer-events-none" />
+
+                                  {pack.active && (
+                                    <div className="absolute top-4 right-2 w-2.5 h-2.5 bg-emerald-500 rounded-full shadow-lg z-30 ring-2 ring-white/20"></div>
+                                  )}
+                                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full text-center z-20 px-1  mt-2">
+                                    <span
+                                      className={cn(
+                                        "text-2xl font-black italic uppercase tracking-tighter leading-none block",
+                                        pack.id === "pack_jacobo"
+                                          ? "text-slate-100 "
+                                          : pack.id === "pack_culiacan"
+                                            ? "text-indigo-100 "
+                                            : "text-amber-100 ",
+                                      )}
+                                    >
+                                      {pack.name.replace(
+                                        /^Sobrecitos (de )?/i,
+                                        "",
+                                      )}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="space-y-2 mt-4 text-center border-t border-slate-800 pt-3">
+                                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                                    Estado:{" "}
+                                    {pack.active
+                                      ? "Activo en Tienda"
+                                      : "Inactivo"}
+                                  </p>
                                 </div>
                               </div>
-                              <div className="space-y-2 mt-4 text-center border-t border-slate-800 pt-3">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                                  Estado:{" "}
-                                  {pack.active
-                                    ? "Activo en Tienda"
-                                    : "Inactivo"}
-                                </p>
+                              <div className="mt-10 space-y-4">
+                                <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-800 pb-2">
+                                  <span>Costo</span>
+                                  <span className="text-amber-400">
+                                    {pack.price} Medallas
+                                  </span>
+                                </div>
+                                <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-800 pb-2">
+                                  <span>Probabilidades</span>
+                                  <span className="text-indigo-400">
+                                    L:{pack.rarities.legendary}% / E:
+                                    {pack.rarities.epic}%
+                                  </span>
+                                </div>
+                                <button
+                                  onClick={() => setEditingPack(pack)}
+                                  className="w-full mt-4 py-4 bg-slate-800 hover:bg-slate-700 rounded-2xl text-[10px] font-black uppercase tracking-widest text-white border border-slate-700 transition-all flex items-center justify-center gap-2"
+                                >
+                                  <Settings size={14} /> Editar Pack
+                                </button>
                               </div>
                             </div>
-                            <div className="mt-10 space-y-4">
-                              <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-800 pb-2">
-                                <span>Costo</span>
-                                <span className="text-amber-400">
-                                  {pack.price} Medallas
-                                </span>
-                              </div>
-                              <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-800 pb-2">
-                                <span>Probabilidades</span>
-                                <span className="text-indigo-400">
-                                  L:{pack.rarities.legendary}% / E:
-                                  {pack.rarities.epic}%
-                                </span>
-                              </div>
-                              <button
-                                onClick={() => setEditingPack(pack)}
-                                className="w-full mt-4 py-4 bg-slate-800 hover:bg-slate-700 rounded-2xl text-[10px] font-black uppercase tracking-widest text-white border border-slate-700 transition-all flex items-center justify-center gap-2"
-                              >
-                                <Settings size={14} /> Editar Pack
-                              </button>
+                          ))}
+                          <button className="bg-slate-900/50 border-2 border-dashed border-slate-800 rounded-[3rem] p-10 flex flex-col items-center justify-center gap-4 hover:border-indigo-500 transition-all group">
+                            <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center text-slate-500 group-hover:text-white transition-colors">
+                              <Plus size={32} />
                             </div>
-                          </div>
-                        ))}
-                        <button className="bg-slate-900/50 border-2 border-dashed border-slate-800 rounded-[3rem] p-10 flex flex-col items-center justify-center gap-4 hover:border-indigo-500 transition-all group">
-                          <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center text-slate-500 group-hover:text-white transition-colors">
-                            <Plus size={32} />
-                          </div>
-                          <span className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 group-hover:text-white transition-colors">
-                            Crear Nuevo Pack
-                          </span>
-                        </button>
+                            <span className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 group-hover:text-white transition-colors">
+                              Crear Nuevo Pack
+                            </span>
+                          </button>
                         </div>
                       </div>
                     ) : (
                       <div className="flex-1 min-h-0 flex flex-col justify-center">
-                        <div 
+                        <div
                           ref={packsScrollRef}
                           onPointerDown={handlePointerDown}
                           onPointerMove={handlePointerMove}
                           onPointerUp={handlePointerUpOrLeave}
                           onPointerLeave={handlePointerUpOrLeave}
-                          className={cn("flex overflow-x-auto transform-gpu lg:overflow-x-visible gap-4 sm:gap-6 lg:gap-12 px-[15vw] sm:px-[25vw] lg:px-4 py-8 md:py-12 no-scrollbar items-center justify-start lg:justify-center min-w-full cursor-grab lg:cursor-auto active:cursor-grabbing select-none h-auto items-stretch sm:items-center", isDraggingPack ? "" : "snap-x snap-mandatory lg:snap-none")}
+                          className={cn(
+                            "flex overflow-x-auto transform-gpu lg:overflow-x-visible gap-4 sm:gap-6 lg:gap-12 px-[15vw] sm:px-[25vw] lg:px-4 py-8 md:py-12 no-scrollbar items-center justify-start lg:justify-center min-w-full cursor-grab lg:cursor-auto active:cursor-grabbing select-none h-auto items-stretch sm:items-center",
+                            isDraggingPack
+                              ? ""
+                              : "snap-x snap-mandatory lg:snap-none",
+                          )}
                         >
                           {packs
                             .filter((p) => p.active)
@@ -5037,14 +6625,19 @@ export default function App() {
                                       "bg-slate-800 text-white hover:bg-indigo-600 border border-slate-700 hover:border-indigo-500",
                                     )}
                                   >
-                                    {pack.price} <Coins size={20} className="text-amber-400" />
+                                    {pack.price}{" "}
+                                    <Coins
+                                      size={20}
+                                      className="text-amber-400"
+                                    />
                                   </button>
                                   <button
                                     onClick={() => setExchangePackId(pack.id)}
                                     className={cn(
                                       "px-4 md:px-5 py-3 md:py-4 rounded-xl md:rounded-2xl shadow-lg transition-all active:scale-95 flex items-center justify-center",
                                       "bg-slate-800 text-white hover:bg-emerald-600 border border-slate-700 hover:border-emerald-500",
-                                      !stats.packCurrencies?.[pack.id] && "opacity-50"
+                                      !stats.packCurrencies?.[pack.id] &&
+                                        "opacity-50",
                                     )}
                                   >
                                     <Repeat size={20} />
@@ -5314,7 +6907,10 @@ export default function App() {
                     setActivePack(null);
                     setActiveTab("collection");
                   }}
-                  ownedCardIds={[...stats.collection, ...(stats.unstickedCards || [])]}
+                  ownedCardIds={[
+                    ...stats.collection,
+                    ...(stats.unstickedCards || []),
+                  ]}
                 />
               )}
 
@@ -5333,62 +6929,133 @@ export default function App() {
                     </button>
 
                     <div className="text-center mb-8 pr-8 sm:pr-0">
-                      <h3 className="text-xl sm:text-2xl md:text-3xl font-black italic uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">Intercambio de Duplicadas</h3>
-                      <p className="text-slate-500 text-[10px] md:text-xs font-bold uppercase tracking-widest mt-2">Usa las monedas de sobres repetidos para comprar cartas específicas</p>
+                      <h3 className="text-xl sm:text-2xl md:text-3xl font-black italic uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">
+                        Intercambio de Duplicadas
+                      </h3>
+                      <p className="text-slate-500 text-[10px] md:text-xs font-bold uppercase tracking-widest mt-2">
+                        Usa las monedas de sobres repetidos para comprar cartas
+                        específicas
+                      </p>
                     </div>
 
                     <div className="flex justify-center mb-8">
-                       <div className="flex items-center justify-center gap-2 bg-slate-800/50 border border-slate-700/50 rounded-xl px-6 py-3">
-                         <Coins className={exchangePackId === 'pack_culiacan' ? 'text-rose-500' : exchangePackId === 'pack_six_seven' ? 'text-emerald-500' : 'text-slate-400'} size={20} />
-                         <span className="font-black text-lg text-white">
-                           {stats.packCurrencies?.[exchangePackId] || 0}
-                         </span>
-                       </div>
+                      <div className="flex items-center justify-center gap-2 bg-slate-800/50 border border-slate-700/50 rounded-xl px-6 py-3">
+                        <Coins
+                          className={
+                            exchangePackId === "pack_culiacan"
+                              ? "text-rose-500"
+                              : exchangePackId === "pack_six_seven"
+                                ? "text-emerald-500"
+                                : "text-slate-400"
+                          }
+                          size={20}
+                        />
+                        <span className="font-black text-lg text-white">
+                          {stats.packCurrencies?.[exchangePackId] || 0}
+                        </span>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 max-h-[60vh] overflow-y-auto transform-gpu pr-2 custom-scrollbar">
-                      {allAvailableCards.filter(c => c.category === 'Collectible' && (c.sourcePackId || 'pack_jacobo') === exchangePackId).map(card => {
-                         const isOwned = stats.collection.includes(card.id);
-                         if (isOwned) return null; // Don't show owned cards
+                      {allAvailableCards
+                        .filter(
+                          (c) =>
+                            c.category === "Collectible" &&
+                            (c.sourcePackId || "pack_jacobo") ===
+                              exchangePackId,
+                        )
+                        .map((card) => {
+                          const isOwned = stats.collection.includes(card.id);
+                          if (isOwned) return null; // Don't show owned cards
 
-                         const cost = card.rarity === 'Legendary' || card.rarity === 'Secret' ? 1000 : card.rarity === 'Epic' ? 250 : card.rarity === 'Rare' ? 75 : 25;
-                         const userCoins = stats.packCurrencies?.[exchangePackId] || 0;
-                         const canAfford = userCoins >= cost;
-                         const CurrencyIconClass = exchangePackId === 'pack_culiacan' ? 'text-rose-500' : exchangePackId === 'pack_six_seven' ? 'text-emerald-500' : 'text-slate-400';
+                          const cost =
+                            card.rarity === "Legendary" ||
+                            card.rarity === "Secret"
+                              ? 1000
+                              : card.rarity === "Epic"
+                                ? 250
+                                : card.rarity === "Rare"
+                                  ? 75
+                                  : 25;
+                          const userCoins =
+                            stats.packCurrencies?.[exchangePackId] || 0;
+                          const canAfford = userCoins >= cost;
+                          const CurrencyIconClass =
+                            exchangePackId === "pack_culiacan"
+                              ? "text-rose-500"
+                              : exchangePackId === "pack_six_seven"
+                                ? "text-emerald-500"
+                                : "text-slate-400";
 
-                         return (
-                           <div key={'store'+card.id} className="bg-slate-950/50 border border-slate-800 rounded-2xl p-3 sm:p-4 flex flex-col items-center gap-4 hover:border-emerald-500/50 transition-all hover:bg-slate-900 group">
+                          return (
+                            <div
+                              key={"store" + card.id}
+                              className="bg-slate-950/50 border border-slate-800 rounded-2xl p-3 sm:p-4 flex flex-col items-center gap-4 hover:border-emerald-500/50 transition-all hover:bg-slate-900 group"
+                            >
                               <div className="w-full flex justify-center transform group-hover:scale-105 transition-transform duration-300 min-h-[140px] sm:min-h-[180px]">
-                                <CardComponent card={card} isLocked={!canAfford} className="w-24 sm:w-32" />
+                                <CardComponent
+                                  card={card}
+                                  isLocked={!canAfford}
+                                  className="w-24 sm:w-32"
+                                />
                               </div>
                               <div className="text-center w-full flex flex-col justify-end flex-1 mt-auto">
-                                <h4 className="text-[9px] sm:text-[10px] font-black uppercase text-slate-300 truncate w-full mb-3">{card.name}</h4>
-                                <button 
+                                <h4 className="text-[9px] sm:text-[10px] font-black uppercase text-slate-300 truncate w-full mb-3">
+                                  {card.name}
+                                </h4>
+                                <button
                                   onClick={() => {
                                     if (canAfford) {
-                                      setStats(prev => ({
+                                      setStats((prev) => ({
                                         ...prev,
-                                        collection: [...prev.collection, card.id],
+                                        collection: [
+                                          ...prev.collection,
+                                          card.id,
+                                        ],
                                         packCurrencies: {
                                           ...prev.packCurrencies,
-                                          pack_jacobo: prev.packCurrencies?.pack_jacobo || 0,
-                                          pack_culiacan: prev.packCurrencies?.pack_culiacan || 0,
-                                          pack_six_seven: prev.packCurrencies?.pack_six_seven || 0,
-                                          [exchangePackId]: (prev.packCurrencies?.[exchangePackId] || 0) - cost
-                                        }
+                                          pack_jacobo:
+                                            prev.packCurrencies?.pack_jacobo ||
+                                            0,
+                                          pack_culiacan:
+                                            prev.packCurrencies
+                                              ?.pack_culiacan || 0,
+                                          pack_six_seven:
+                                            prev.packCurrencies
+                                              ?.pack_six_seven || 0,
+                                          [exchangePackId]:
+                                            (prev.packCurrencies?.[
+                                              exchangePackId
+                                            ] || 0) - cost,
+                                        },
                                       }));
                                     }
                                   }}
                                   disabled={!canAfford}
-                                  className={cn("w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all shadow-lg", canAfford ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-500/20" : "bg-slate-800 text-slate-500 opacity-60 cursor-not-allowed")}
+                                  className={cn(
+                                    "w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all shadow-lg",
+                                    canAfford
+                                      ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-500/20"
+                                      : "bg-slate-800 text-slate-500 opacity-60 cursor-not-allowed",
+                                  )}
                                 >
-                                  {cost} <Coins size={14} className={CurrencyIconClass} />
+                                  {cost}{" "}
+                                  <Coins
+                                    size={14}
+                                    className={CurrencyIconClass}
+                                  />
                                 </button>
                               </div>
-                           </div>
-                         );
-                      })}
-                      {allAvailableCards.filter(c => c.category === 'Collectible' && (c.sourcePackId || 'pack_jacobo') === exchangePackId && !stats.collection.includes(c.id)).length === 0 && (
+                            </div>
+                          );
+                        })}
+                      {allAvailableCards.filter(
+                        (c) =>
+                          c.category === "Collectible" &&
+                          (c.sourcePackId || "pack_jacobo") ===
+                            exchangePackId &&
+                          !stats.collection.includes(c.id),
+                      ).length === 0 && (
                         <div className="col-span-full py-12 text-center text-slate-500 font-bold tracking-widest uppercase text-xs">
                           Ya tienes todas las cartas de este sobre.
                         </div>
@@ -5424,7 +7091,9 @@ export default function App() {
                     <div className="flex-1 overflow-y-auto transform-gpu no-scrollbar pt-2 sm:pt-0">
                       <DailyChallenge
                         challenge={currentChallenge}
-                        isCompleted={sessionCompletedChallenges.has(currentChallenge.id)}
+                        isCompleted={sessionCompletedChallenges.has(
+                          currentChallenge.id,
+                        )}
                         userRole={stats.role}
                         onComplete={(correct) => {
                           handleChallengeComplete(correct);
@@ -5629,7 +7298,7 @@ export default function App() {
                 </div>
               )}
 
-               {showPasswordModal && (
+              {showPasswordModal && (
                 <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-sm">
                   <motion.div
                     initial={{ scale: 0.9, opacity: 0, y: 20 }}
@@ -5650,7 +7319,11 @@ export default function App() {
                         <button
                           onClick={() => {
                             setShowPasswordModal(false);
-                            setPasswordForm({ current: "", new: "", confirm: "" });
+                            setPasswordForm({
+                              current: "",
+                              new: "",
+                              confirm: "",
+                            });
                           }}
                           className="w-8 h-8 bg-slate-800 rounded-full flex items-center justify-center text-slate-500 hover:text-white transition-colors"
                         >
@@ -5660,21 +7333,35 @@ export default function App() {
 
                       <div className="space-y-4">
                         <div className="space-y-1.5">
-                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Nueva Contraseña</label>
-                          <input 
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                            Nueva Contraseña
+                          </label>
+                          <input
                             type="password"
                             value={passwordForm.new}
-                            onChange={(e) => setPasswordForm(prev => ({ ...prev, new: e.target.value }))}
+                            onChange={(e) =>
+                              setPasswordForm((prev) => ({
+                                ...prev,
+                                new: e.target.value,
+                              }))
+                            }
                             placeholder="••••••••"
                             className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500/50 outline-none transition-all placeholder:text-slate-700 font-mono"
                           />
                         </div>
                         <div className="space-y-1.5">
-                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Confirmar Contraseña</label>
-                          <input 
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                            Confirmar Contraseña
+                          </label>
+                          <input
                             type="password"
                             value={passwordForm.confirm}
-                            onChange={(e) => setPasswordForm(prev => ({ ...prev, confirm: e.target.value }))}
+                            onChange={(e) =>
+                              setPasswordForm((prev) => ({
+                                ...prev,
+                                confirm: e.target.value,
+                              }))
+                            }
                             placeholder="••••••••"
                             className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500/50 outline-none transition-all placeholder:text-slate-700 font-mono"
                           />
@@ -5682,36 +7369,55 @@ export default function App() {
                       </div>
 
                       <button
-                        disabled={isChangingPassword || !passwordForm.new || !passwordForm.confirm}
+                        disabled={
+                          isChangingPassword ||
+                          !passwordForm.new ||
+                          !passwordForm.confirm
+                        }
                         onClick={async () => {
                           if (passwordForm.new !== passwordForm.confirm) {
                             toast.error("Las contraseñas no coinciden");
                             return;
                           }
                           if (passwordForm.new.length < 6) {
-                            toast.error("La contraseña debe tener al menos 6 caracteres");
+                            toast.error(
+                              "La contraseña debe tener al menos 6 caracteres",
+                            );
                             return;
                           }
 
                           setIsChangingPassword(true);
                           try {
-                            const { error } = await supabaseService.updatePassword(passwordForm.new);
+                            const { error } =
+                              await supabaseService.updatePassword(
+                                passwordForm.new,
+                              );
                             if (error) throw error;
-                            
-                            toast.success("¡Contraseña actualizada exitosamente!");
+
+                            toast.success(
+                              "¡Contraseña actualizada exitosamente!",
+                            );
                             setShowPasswordModal(false);
-                            setPasswordForm({ current: "", new: "", confirm: "" });
+                            setPasswordForm({
+                              current: "",
+                              new: "",
+                              confirm: "",
+                            });
                           } catch (err: any) {
-                            toast.error(`Error: ${err.message || "No se pudo actualizar"}`);
+                            toast.error(
+                              `Error: ${err.message || "No se pudo actualizar"}`,
+                            );
                           } finally {
                             setIsChangingPassword(false);
                           }
                         }}
                         className={cn(
                           "w-full py-5 rounded-2xl font-black uppercase tracking-widest text-xs transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2",
-                          isChangingPassword || !passwordForm.new || !passwordForm.confirm
+                          isChangingPassword ||
+                            !passwordForm.new ||
+                            !passwordForm.confirm
                             ? "bg-slate-800 text-slate-600 cursor-not-allowed"
-                            : "bg-cyan-600 hover:bg-cyan-500 text-white shadow-cyan-500/20"
+                            : "bg-cyan-600 hover:bg-cyan-500 text-white shadow-cyan-500/20",
                         )}
                       >
                         {isChangingPassword ? (
@@ -5727,6 +7433,16 @@ export default function App() {
                   </motion.div>
                 </div>
               )}
+
+              <ProfileModal
+                isOpen={showProfileModal}
+                onClose={() => setShowProfileModal(false)}
+                stats={stats}
+                setStats={(updatedStats) => {
+                  setStats(updatedStats);
+                  loadUsers();
+                }}
+              />
 
               {assignmentModal.isOpen && (
                 <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/80 ">
@@ -5773,18 +7489,26 @@ export default function App() {
                               <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                                 Asignar Materias y Grupos
                               </label>
-                              <p className="text-[8px] font-bold text-indigo-400 uppercase tracking-wider">Paso 1: Elige Año. Paso 2: Elige Materia. Paso 3: Elige Grupo.</p>
+                              <p className="text-[8px] font-bold text-indigo-400 uppercase tracking-wider">
+                                Paso 1: Elige Año. Paso 2: Elige Materia. Paso
+                                3: Elige Grupo.
+                              </p>
                             </div>
                             <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800">
                               {(["1", "2", "3"] as Year[]).map((year) => (
                                 <button
                                   key={year}
-                                  onClick={() => setAssignmentModal(prev => ({ ...prev, activeYear: year }))}
+                                  onClick={() =>
+                                    setAssignmentModal((prev) => ({
+                                      ...prev,
+                                      activeYear: year,
+                                    }))
+                                  }
                                   className={cn(
                                     "px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all",
                                     assignmentModal.activeYear === year
                                       ? "bg-slate-800 text-white shadow-md"
-                                      : "text-slate-500 hover:text-slate-400"
+                                      : "text-slate-500 hover:text-slate-400",
                                   )}
                                 >
                                   {year}º
@@ -5792,28 +7516,55 @@ export default function App() {
                               ))}
                             </div>
                           </div>
-                          
+
                           <div className="space-y-3 max-h-[350px] overflow-y-auto pr-2 transform-gpu scrollbar-thin scrollbar-thumb-slate-800">
-                            {(ACADEMIC_CONTENT[assignmentModal.activeYear] || []).map((subject) => {
-                              const isSubjectSelected = assignmentModal.selectedSubjects.some(s => s === subject.id || s.startsWith(`${subject.id}:`));
+                            {(
+                              ACADEMIC_CONTENT[assignmentModal.activeYear] || []
+                            ).map((subject) => {
+                              const isSubjectSelected =
+                                assignmentModal.selectedSubjects.some(
+                                  (s) =>
+                                    s === subject.id ||
+                                    s.startsWith(`${subject.id}:`),
+                                );
                               return (
-                                <div key={subject.id} className={cn(
-                                  "rounded-2xl border transition-all overflow-hidden",
-                                  isSubjectSelected ? "bg-slate-800/40 border-indigo-500/30" : "bg-slate-800/10 border-slate-800"
-                                )}>
+                                <div
+                                  key={subject.id}
+                                  className={cn(
+                                    "rounded-2xl border transition-all overflow-hidden",
+                                    isSubjectSelected
+                                      ? "bg-slate-800/40 border-indigo-500/30"
+                                      : "bg-slate-800/10 border-slate-800",
+                                  )}
+                                >
                                   <button
                                     onClick={() => {
                                       setAssignmentModal((prev) => {
-                                        const alreadySelected = prev.selectedSubjects.some(s => s === subject.id || s.startsWith(`${subject.id}:`));
+                                        const alreadySelected =
+                                          prev.selectedSubjects.some(
+                                            (s) =>
+                                              s === subject.id ||
+                                              s.startsWith(`${subject.id}:`),
+                                          );
                                         if (alreadySelected) {
                                           return {
                                             ...prev,
-                                            selectedSubjects: prev.selectedSubjects.filter(s => s !== subject.id && !s.startsWith(`${subject.id}:`))
+                                            selectedSubjects:
+                                              prev.selectedSubjects.filter(
+                                                (s) =>
+                                                  s !== subject.id &&
+                                                  !s.startsWith(
+                                                    `${subject.id}:`,
+                                                  ),
+                                              ),
                                           };
                                         } else {
                                           return {
                                             ...prev,
-                                            selectedSubjects: [...prev.selectedSubjects, subject.id]
+                                            selectedSubjects: [
+                                              ...prev.selectedSubjects,
+                                              subject.id,
+                                            ],
                                           };
                                         }
                                       });
@@ -5821,61 +7572,107 @@ export default function App() {
                                     className="w-full p-4 flex items-center justify-between group"
                                   >
                                     <div className="flex items-center gap-3">
-                                      <div className={cn(
-                                        "w-8 h-8 rounded-lg flex items-center justify-center transition-all",
-                                        isSubjectSelected ? "bg-indigo-500 text-white" : "bg-slate-800 text-slate-500 group-hover:bg-slate-700"
-                                      )}>
+                                      <div
+                                        className={cn(
+                                          "w-8 h-8 rounded-lg flex items-center justify-center transition-all",
+                                          isSubjectSelected
+                                            ? "bg-indigo-500 text-white"
+                                            : "bg-slate-800 text-slate-500 group-hover:bg-slate-700",
+                                        )}
+                                      >
                                         <BookOpen size={16} />
                                       </div>
-                                      <span className={cn(
-                                        "text-xs font-black uppercase tracking-widest",
-                                        isSubjectSelected ? "text-white" : "text-slate-400"
-                                      )}>{subject.name}</span>
+                                      <span
+                                        className={cn(
+                                          "text-xs font-black uppercase tracking-widest",
+                                          isSubjectSelected
+                                            ? "text-white"
+                                            : "text-slate-400",
+                                        )}
+                                      >
+                                        {subject.name}
+                                      </span>
                                     </div>
-                                    <div className={cn(
-                                      "w-5 h-5 rounded-md border flex items-center justify-center transition-all",
-                                      isSubjectSelected ? "bg-indigo-500 border-indigo-500" : "border-slate-700"
-                                    )}>
-                                      {isSubjectSelected && <Check size={12} className="text-white" />}
+                                    <div
+                                      className={cn(
+                                        "w-5 h-5 rounded-md border flex items-center justify-center transition-all",
+                                        isSubjectSelected
+                                          ? "bg-indigo-500 border-indigo-500"
+                                          : "border-slate-700",
+                                      )}
+                                    >
+                                      {isSubjectSelected && (
+                                        <Check
+                                          size={12}
+                                          className="text-white"
+                                        />
+                                      )}
                                     </div>
                                   </button>
 
                                   {isSubjectSelected && (
                                     <div className="px-4 pb-4 pt-1 space-y-2 border-t border-slate-800/50">
-                                      <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest ml-1">Elegir Grupos:</p>
+                                      <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                                        Elegir Grupos:
+                                      </p>
                                       <div className="flex flex-wrap gap-1.5">
-                                        {SCHOOL_GROUPS.filter(g => g.startsWith(assignmentModal.activeYear)).map(g => {
-                                          const isMapped = assignmentModal.selectedSubjects.includes(`${subject.id}:${g}`);
+                                        {SCHOOL_GROUPS.filter((g) =>
+                                          g.startsWith(
+                                            assignmentModal.activeYear,
+                                          ),
+                                        ).map((g) => {
+                                          const isMapped =
+                                            assignmentModal.selectedSubjects.includes(
+                                              `${subject.id}:${g}`,
+                                            );
                                           // Also consider it selected if subject.id is there (legacy format means "all groups of this year")
                                           // but we want to encourage specific mapping now
-                                          const isActive = isMapped || (assignmentModal.selectedSubjects.includes(subject.id) && g.startsWith(assignmentModal.activeYear));
-                                          
+                                          const isActive =
+                                            isMapped ||
+                                            (assignmentModal.selectedSubjects.includes(
+                                              subject.id,
+                                            ) &&
+                                              g.startsWith(
+                                                assignmentModal.activeYear,
+                                              ));
+
                                           return (
                                             <button
                                               key={g}
                                               onClick={() => {
-                                                setAssignmentModal(prev => {
-                                                  const newSubs = [...prev.selectedSubjects];
+                                                setAssignmentModal((prev) => {
+                                                  const newSubs = [
+                                                    ...prev.selectedSubjects,
+                                                  ];
                                                   const mapping = `${subject.id}:${g}`;
-                                                  
-                                                  // If base subject is there, it implies all groups. 
+
+                                                  // If base subject is there, it implies all groups.
                                                   // Let's replace base subject with specific mappings to be more granular as requested.
-                                                  let filtered = newSubs.filter(s => s !== subject.id);
-                                                  
-                                                  if (filtered.includes(mapping)) {
-                                                    filtered = filtered.filter(s => s !== mapping);
+                                                  let filtered = newSubs.filter(
+                                                    (s) => s !== subject.id,
+                                                  );
+
+                                                  if (
+                                                    filtered.includes(mapping)
+                                                  ) {
+                                                    filtered = filtered.filter(
+                                                      (s) => s !== mapping,
+                                                    );
                                                   } else {
                                                     filtered.push(mapping);
                                                   }
 
-                                                  return { ...prev, selectedSubjects: filtered };
+                                                  return {
+                                                    ...prev,
+                                                    selectedSubjects: filtered,
+                                                  };
                                                 });
                                               }}
                                               className={cn(
                                                 "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest border transition-all",
-                                                isActive 
+                                                isActive
                                                   ? "bg-emerald-500/20 border-emerald-500 text-emerald-400 shadow-lg shadow-emerald-500/10"
-                                                  : "bg-slate-900 border-slate-800 text-slate-500 hover:border-slate-700"
+                                                  : "bg-slate-900 border-slate-800 text-slate-500 hover:border-slate-700",
                                               )}
                                             >
                                               {g}
@@ -5901,33 +7698,43 @@ export default function App() {
                             return;
                           }
                           if (assignmentModal.teacherId) {
-                            const newSubjects = assignmentModal.selectedSubjects;
+                            const newSubjects =
+                              assignmentModal.selectedSubjects;
                             const derivedGroupsFromSubjects = newSubjects
-                              .filter(s => s.includes(':'))
-                              .map(s => s.split(':')[1] as Grade);
-                            
+                              .filter((s) => s.includes(":"))
+                              .map((s) => s.split(":")[1] as Grade);
+
                             // Groups are now strictly derived from subject mappings to prevent "broadcasting"
-                            const newGroups = Array.from(new Set(derivedGroupsFromSubjects));
-                            
-                            const updatePromise = supabaseService.updateUserStats(assignmentModal.teacherId, {
-                              assignedGroups: newGroups,
-                              assignedSubjects: newSubjects
-                            });
+                            const newGroups = Array.from(
+                              new Set(derivedGroupsFromSubjects),
+                            );
+
+                            const updatePromise =
+                              supabaseService.updateUserStats(
+                                assignmentModal.teacherId,
+                                {
+                                  assignedGroups: newGroups,
+                                  assignedSubjects: newSubjects,
+                                },
+                              );
 
                             toast.promise(updatePromise, {
-                              loading: 'Guardando cambios...',
+                              loading: "Guardando cambios...",
                               success: () => {
                                 loadUsers();
-                                
+
                                 // If current user is the one being updated, update local stats too
-                                if (assignmentModal.teacherId === currentUserId || assignmentModal.teacherId === stats.id) {
-                                  setStats(prev => ({
+                                if (
+                                  assignmentModal.teacherId === currentUserId ||
+                                  assignmentModal.teacherId === stats.id
+                                ) {
+                                  setStats((prev) => ({
                                     ...prev,
                                     assignedGroups: newGroups,
-                                    assignedSubjects: newSubjects
+                                    assignedSubjects: newSubjects,
                                   }));
                                 }
-                                
+
                                 setAssignmentModal({
                                   teacherId: null,
                                   isOpen: false,
@@ -5937,7 +7744,7 @@ export default function App() {
                                 });
                                 return `Asignación actualizada exitosamente.`;
                               },
-                              error: 'Error al actualizar la asignación.'
+                              error: "Error al actualizar la asignación.",
                             });
                           }
                         }}
@@ -6010,26 +7817,51 @@ export default function App() {
                       {createChallengeType === "AI" && (
                         <div className="space-y-4">
                           <div className="space-y-1.5">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Materia</label>
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                              Materia
+                            </label>
                             <select
                               value={aiChallengeForm.subjectId}
-                              onChange={(e) => setAiChallengeForm(prev => ({ ...prev, subjectId: e.target.value }))}
+                              onChange={(e) =>
+                                setAiChallengeForm((prev) => ({
+                                  ...prev,
+                                  subjectId: e.target.value,
+                                }))
+                              }
                               className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500/50 outline-none transition-all cursor-pointer"
                             >
-                              <option value="" disabled className="text-slate-500 bg-slate-950">Selecciona una materia...</option>
+                              <option
+                                value=""
+                                disabled
+                                className="text-slate-500 bg-slate-950"
+                              >
+                                Selecciona una materia...
+                              </option>
                               {["1", "2", "3"].map((grade) => {
-                                const list = getSubjectListHelper().filter(s => s.grade === grade);
-                                const labelText = grade === "1" ? "🟢 1º GRADO (PRIMARIA/SECUNDARIA)" : grade === "2" ? "🔵 2º GRADO (PLAN SEP)" : "🟣 3º GRADO (CIERRE)";
-                                const colorClass = grade === "1" ? "text-emerald-400" : grade === "2" ? "text-cyan-400" : "text-purple-400";
+                                const list = getSubjectListHelper().filter(
+                                  (s) => s.grade === grade,
+                                );
+                                const labelText =
+                                  grade === "1"
+                                    ? "🟢 1º GRADO (PRIMARIA/SECUNDARIA)"
+                                    : grade === "2"
+                                      ? "🔵 2º GRADO (PLAN SEP)"
+                                      : "🟣 3º GRADO (CIERRE)";
+                                const colorClass =
+                                  grade === "1"
+                                    ? "text-emerald-400"
+                                    : grade === "2"
+                                      ? "text-cyan-400"
+                                      : "text-purple-400";
                                 return (
-                                  <optgroup 
-                                    key={grade} 
+                                  <optgroup
+                                    key={grade}
                                     label={labelText}
                                     className={`${colorClass} bg-slate-950 font-black uppercase tracking-wider text-xs p-2`}
                                   >
                                     {list.map((s) => (
-                                      <option 
-                                        key={s.id} 
+                                      <option
+                                        key={s.id}
                                         value={s.id}
                                         className="text-slate-200 bg-slate-950 font-medium normal-case py-2 pl-4 text-sm"
                                       >
@@ -6043,23 +7875,39 @@ export default function App() {
                           </div>
 
                           <div className="space-y-1.5">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Tema Principal o Contenido Académico *</label>
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                              Tema Principal o Contenido Académico *
+                            </label>
                             <input
                               type="text"
                               required
                               value={aiChallengeForm.topicName}
-                              onChange={(e) => setAiChallengeForm(prev => ({ ...prev, topicName: e.target.value }))}
+                              onChange={(e) =>
+                                setAiChallengeForm((prev) => ({
+                                  ...prev,
+                                  topicName: e.target.value,
+                                }))
+                              }
                               placeholder="Ej. Ecuaciones lineales de primer grado, Ley de conservación de energía"
                               className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500/50 outline-none transition-all placeholder:text-slate-700"
                             />
-                            <p className="text-[9px] text-slate-500 ml-1 leading-normal italic">Consistente con los programas oficiales de la SEP.</p>
+                            <p className="text-[9px] text-slate-500 ml-1 leading-normal italic">
+                              Consistente con los programas oficiales de la SEP.
+                            </p>
                           </div>
 
                           <div className="space-y-1.5">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Sugerencias o Ideas Especiales (Opcional)</label>
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                              Sugerencias o Ideas Especiales (Opcional)
+                            </label>
                             <textarea
                               value={aiChallengeForm.idea}
-                              onChange={(e) => setAiChallengeForm(prev => ({ ...prev, idea: e.target.value }))}
+                              onChange={(e) =>
+                                setAiChallengeForm((prev) => ({
+                                  ...prev,
+                                  idea: e.target.value,
+                                }))
+                              }
                               placeholder="Ej. Quiero que sea un desafío de tipo práctico, o que incluya un acertijo matemático ambientado en el espacio..."
                               rows={3}
                               className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500/50 outline-none transition-all placeholder:text-slate-700 resize-none"
@@ -6079,7 +7927,10 @@ export default function App() {
                               </>
                             ) : (
                               <>
-                                <Sparkles size={16} className="text-cyan-200 animate-bounce" />
+                                <Sparkles
+                                  size={16}
+                                  className="text-cyan-200 animate-bounce"
+                                />
                                 Generar Desafío con IA
                               </>
                             )}
@@ -6092,26 +7943,51 @@ export default function App() {
                         <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div className="space-y-1.5">
-                              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Materia</label>
+                              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                                Materia
+                              </label>
                               <select
                                 value={manualChallengeForm.subjectId}
-                                onChange={(e) => setManualChallengeForm(prev => ({ ...prev, subjectId: e.target.value }))}
+                                onChange={(e) =>
+                                  setManualChallengeForm((prev) => ({
+                                    ...prev,
+                                    subjectId: e.target.value,
+                                  }))
+                                }
                                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-3 text-white text-xs focus:border-indigo-500/50 outline-none cursor-pointer"
                               >
-                                <option value="" disabled className="text-slate-500 bg-slate-950">Selecciona una materia...</option>
+                                <option
+                                  value=""
+                                  disabled
+                                  className="text-slate-500 bg-slate-950"
+                                >
+                                  Selecciona una materia...
+                                </option>
                                 {["1", "2", "3"].map((grade) => {
-                                  const list = getSubjectListHelper().filter(s => s.grade === grade);
-                                  const labelText = grade === "1" ? "🟢 1º GRADO (PRIMARIA/SECUNDARIA)" : grade === "2" ? "🔵 2º GRADO (PLAN SEP)" : "🟣 3º GRADO (CIERRE)";
-                                  const colorClass = grade === "1" ? "text-emerald-400" : grade === "2" ? "text-cyan-400" : "text-purple-400";
+                                  const list = getSubjectListHelper().filter(
+                                    (s) => s.grade === grade,
+                                  );
+                                  const labelText =
+                                    grade === "1"
+                                      ? "🟢 1º GRADO (PRIMARIA/SECUNDARIA)"
+                                      : grade === "2"
+                                        ? "🔵 2º GRADO (PLAN SEP)"
+                                        : "🟣 3º GRADO (CIERRE)";
+                                  const colorClass =
+                                    grade === "1"
+                                      ? "text-emerald-400"
+                                      : grade === "2"
+                                        ? "text-cyan-400"
+                                        : "text-purple-400";
                                   return (
-                                    <optgroup 
-                                      key={grade} 
+                                    <optgroup
+                                      key={grade}
                                       label={labelText}
                                       className={`${colorClass} bg-slate-950 font-black uppercase tracking-wider text-xs p-1`}
                                     >
                                       {list.map((s) => (
-                                        <option 
-                                          key={s.id} 
+                                        <option
+                                          key={s.id}
                                           value={s.id}
                                           className="text-slate-200 bg-slate-950 font-medium normal-case py-2 pl-4 text-xs"
                                         >
@@ -6125,10 +8001,17 @@ export default function App() {
                             </div>
 
                             <div className="space-y-1.5">
-                              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Grupo de Alumnos Destino</label>
+                              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                                Grupo de Alumnos Destino
+                              </label>
                               <select
                                 value={manualChallengeForm.group}
-                                onChange={(e) => setManualChallengeForm(prev => ({ ...prev, group: e.target.value }))}
+                                onChange={(e) =>
+                                  setManualChallengeForm((prev) => ({
+                                    ...prev,
+                                    group: e.target.value,
+                                  }))
+                                }
                                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-3 text-white text-xs focus:border-indigo-500/50 outline-none cursor-pointer"
                               >
                                 <option value="A">Grupo A</option>
@@ -6140,47 +8023,75 @@ export default function App() {
                           </div>
 
                           <div className="space-y-1.5">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Bloque / Sector (Tema principal) *</label>
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                              Bloque / Sector (Tema principal) *
+                            </label>
                             <input
                               type="text"
                               required
                               value={manualChallengeForm.topicName}
-                              onChange={(e) => setManualChallengeForm(prev => ({ ...prev, topicName: e.target.value }))}
+                              onChange={(e) =>
+                                setManualChallengeForm((prev) => ({
+                                  ...prev,
+                                  topicName: e.target.value,
+                                }))
+                              }
                               placeholder="Ej. Suma de Fracciones"
                               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-xs focus:border-indigo-500/50 outline-none placeholder:text-slate-700"
                             />
                           </div>
 
                           <div className="space-y-1.5">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Título del Desafío *</label>
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                              Título del Desafío *
+                            </label>
                             <input
                               type="text"
                               required
                               value={manualChallengeForm.title}
-                              onChange={(e) => setManualChallengeForm(prev => ({ ...prev, title: e.target.value }))}
+                              onChange={(e) =>
+                                setManualChallengeForm((prev) => ({
+                                  ...prev,
+                                  title: e.target.value,
+                                }))
+                              }
                               placeholder="Ej. El Desafío del Repartidor de Pasteles"
                               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-xs focus:border-indigo-500/50 outline-none placeholder:text-slate-700"
                             />
                           </div>
 
                           <div className="space-y-1.5">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Descripción Breve *</label>
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                              Descripción Breve *
+                            </label>
                             <input
                               type="text"
                               required
                               value={manualChallengeForm.description}
-                              onChange={(e) => setManualChallengeForm(prev => ({ ...prev, description: e.target.value }))}
+                              onChange={(e) =>
+                                setManualChallengeForm((prev) => ({
+                                  ...prev,
+                                  description: e.target.value,
+                                }))
+                              }
                               placeholder="Ej. Resuelve los ejercicios prácticos para ganar fichas y medallas."
                               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-xs focus:border-indigo-500/50 outline-none placeholder:text-slate-700"
                             />
                           </div>
 
                           <div className="space-y-1.5">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Instrucciones Detalladas del Desafío *</label>
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                              Instrucciones Detalladas del Desafío *
+                            </label>
                             <textarea
                               required
                               value={manualChallengeForm.instructions}
-                              onChange={(e) => setManualChallengeForm(prev => ({ ...prev, instructions: e.target.value }))}
+                              onChange={(e) =>
+                                setManualChallengeForm((prev) => ({
+                                  ...prev,
+                                  instructions: e.target.value,
+                                }))
+                              }
                               placeholder="Escribe el texto detallado de la actividad o el planteamiento detallado..."
                               rows={3}
                               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-xs focus:border-indigo-500/50 outline-none placeholder:text-slate-700 resize-none"
@@ -6189,57 +8100,100 @@ export default function App() {
 
                           <div className="grid grid-cols-2 gap-3">
                             <div className="space-y-1.5">
-                              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Dificultad</label>
+                              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                                Dificultad
+                              </label>
                               <select
                                 value={manualChallengeForm.difficulty}
-                                onChange={(e) => setManualChallengeForm(prev => ({ ...prev, difficulty: e.target.value as any }))}
+                                onChange={(e) =>
+                                  setManualChallengeForm((prev) => ({
+                                    ...prev,
+                                    difficulty: e.target.value as any,
+                                  }))
+                                }
                                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-3 text-white text-xs focus:border-indigo-500/50 outline-none cursor-pointer"
                               >
                                 <option value="Easy">Fácil (+25 Tokens)</option>
-                                <option value="Medium">Medio (+50 Tokens)</option>
-                                <option value="Hard">Difícil (+150 Tokens & Sobre)</option>
+                                <option value="Medium">
+                                  Medio (+50 Tokens)
+                                </option>
+                                <option value="Hard">
+                                  Difícil (+150 Tokens & Sobre)
+                                </option>
                               </select>
                             </div>
 
                             <div className="space-y-1.5">
-                              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Tipo de Actividad</label>
+                              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                                Tipo de Actividad
+                              </label>
                               <select
                                 value={manualChallengeForm.type}
-                                onChange={(e) => setManualChallengeForm(prev => ({ ...prev, type: e.target.value as any }))}
+                                onChange={(e) =>
+                                  setManualChallengeForm((prev) => ({
+                                    ...prev,
+                                    type: e.target.value as any,
+                                  }))
+                                }
                                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-3 text-white text-xs focus:border-indigo-500/50 outline-none cursor-pointer"
                               >
-                                <option value="Exercise">Práctica Escrita (Reporte)</option>
-                                <option value="Quiz">Examen Opciones (Quiz)</option>
+                                <option value="Exercise">
+                                  Práctica Escrita (Reporte)
+                                </option>
+                                <option value="Quiz">
+                                  Examen Opciones (Quiz)
+                                </option>
                               </select>
                             </div>
                           </div>
 
                           {manualChallengeForm.type === "Quiz" && (
                             <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-3">
-                              <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Opciones de Respuesta del Quiz</p>
+                              <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">
+                                Opciones de Respuesta del Quiz
+                              </p>
                               <div className="grid grid-cols-1 gap-2">
-                                {manualChallengeForm.quizOptions.map((opt, oIdx) => (
-                                  <div key={oIdx} className="flex items-center gap-2">
-                                    <span className="text-[10px] font-black text-slate-500 w-4">{String.fromCharCode(65 + oIdx)})</span>
-                                    <input
-                                      type="text"
-                                      value={opt}
-                                      placeholder={`Opción ${String.fromCharCode(65 + oIdx)}`}
-                                      onChange={(e) => {
-                                        const optionsCopy = [...manualChallengeForm.quizOptions];
-                                        optionsCopy[oIdx] = e.target.value;
-                                        setManualChallengeForm(prev => ({ ...prev, quizOptions: optionsCopy }));
-                                      }}
-                                      className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white text-xs focus:border-indigo-500/30 outline-none"
-                                    />
-                                  </div>
-                                ))}
+                                {manualChallengeForm.quizOptions.map(
+                                  (opt, oIdx) => (
+                                    <div
+                                      key={oIdx}
+                                      className="flex items-center gap-2"
+                                    >
+                                      <span className="text-[10px] font-black text-slate-500 w-4">
+                                        {String.fromCharCode(65 + oIdx)})
+                                      </span>
+                                      <input
+                                        type="text"
+                                        value={opt}
+                                        placeholder={`Opción ${String.fromCharCode(65 + oIdx)}`}
+                                        onChange={(e) => {
+                                          const optionsCopy = [
+                                            ...manualChallengeForm.quizOptions,
+                                          ];
+                                          optionsCopy[oIdx] = e.target.value;
+                                          setManualChallengeForm((prev) => ({
+                                            ...prev,
+                                            quizOptions: optionsCopy,
+                                          }));
+                                        }}
+                                        className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white text-xs focus:border-indigo-500/30 outline-none"
+                                      />
+                                    </div>
+                                  ),
+                                )}
                               </div>
                               <div className="space-y-1.5 pt-2">
-                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Opción Correcta</label>
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                                  Opción Correcta
+                                </label>
                                 <select
                                   value={manualChallengeForm.quizAnswer}
-                                  onChange={(e) => setManualChallengeForm(prev => ({ ...prev, quizAnswer: parseInt(e.target.value) }))}
+                                  onChange={(e) =>
+                                    setManualChallengeForm((prev) => ({
+                                      ...prev,
+                                      quizAnswer: parseInt(e.target.value),
+                                    }))
+                                  }
                                   className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white text-xs focus:border-indigo-500/30 outline-none cursor-pointer"
                                 >
                                   <option value={0}>A</option>
@@ -6253,15 +8207,24 @@ export default function App() {
 
                           {manualChallengeForm.type === "Exercise" && (
                             <div className="flex items-center gap-3 p-3 bg-slate-950 rounded-xl border border-slate-800">
-                              <input 
+                              <input
                                 type="checkbox"
                                 id="evidenceRequiredCheck"
                                 checked={manualChallengeForm.evidenceRequired}
-                                onChange={(e) => setManualChallengeForm(prev => ({ ...prev, evidenceRequired: e.target.checked }))}
+                                onChange={(e) =>
+                                  setManualChallengeForm((prev) => ({
+                                    ...prev,
+                                    evidenceRequired: e.target.checked,
+                                  }))
+                                }
                                 className="w-4 h-4 text-indigo-600 bg-slate-900 border-slate-800 rounded focus:ring-indigo-500/30"
                               />
-                              <label htmlFor="evidenceRequiredCheck" className="text-xs text-slate-350 cursor-pointer select-none">
-                                Exigir entrega de evidencia escaneada o foto para aprobar
+                              <label
+                                htmlFor="evidenceRequiredCheck"
+                                className="text-xs text-slate-350 cursor-pointer select-none"
+                              >
+                                Exigir entrega de evidencia escaneada o foto
+                                para aprobar
                               </label>
                             </div>
                           )}
@@ -6294,13 +8257,24 @@ export default function App() {
                             <UserPlus size={20} />
                           </div>
                           <h3 className="text-xl font-black italic uppercase tracking-tighter text-white">
-                            Nuevo {showCreateUserModal.role === "Teacher" ? "Docente" : "Alumno"}
+                            Nuevo{" "}
+                            {showCreateUserModal.role === "Teacher"
+                              ? "Docente"
+                              : "Alumno"}
                           </h3>
                         </div>
                         <button
                           onClick={() => {
-                            setShowCreateUserModal({ isOpen: false, role: "Teacher" });
-                            setCreateUserForm({ username: "", email: "", password: "", grade: "" });
+                            setShowCreateUserModal({
+                              isOpen: false,
+                              role: "Teacher",
+                            });
+                            setCreateUserForm({
+                              username: "",
+                              email: "",
+                              password: "",
+                              grade: "",
+                            });
                           }}
                           className="w-8 h-8 bg-slate-800 rounded-full flex items-center justify-center text-slate-500 hover:text-white transition-colors"
                         >
@@ -6310,42 +8284,70 @@ export default function App() {
 
                       <div className="space-y-4">
                         <div className="space-y-1.5">
-                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Nombre Completo</label>
-                          <input 
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                            Nombre Completo
+                          </label>
+                          <input
                             type="text"
                             value={createUserForm.username}
-                            onChange={(e) => setCreateUserForm(prev => ({ ...prev, username: e.target.value }))}
+                            onChange={(e) =>
+                              setCreateUserForm((prev) => ({
+                                ...prev,
+                                username: e.target.value.toUpperCase(),
+                              }))
+                            }
                             placeholder="Ej. Juan Pérez"
                             className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500/50 outline-none transition-all placeholder:text-slate-700"
                           />
                         </div>
                         <div className="space-y-1.5">
-                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Correo Electrónico</label>
-                          <input 
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                            Correo Electrónico
+                          </label>
+                          <input
                             type="email"
                             value={createUserForm.email}
-                            onChange={(e) => setCreateUserForm(prev => ({ ...prev, email: e.target.value }))}
+                            onChange={(e) =>
+                              setCreateUserForm((prev) => ({
+                                ...prev,
+                                email: e.target.value,
+                              }))
+                            }
                             placeholder="correo@ejemplo.com"
                             className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500/50 outline-none transition-all placeholder:text-slate-700 font-mono"
                           />
                         </div>
                         <div className="space-y-1.5">
-                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Contraseña</label>
-                          <input 
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                            Contraseña
+                          </label>
+                          <input
                             type="password"
                             value={createUserForm.password}
-                            onChange={(e) => setCreateUserForm(prev => ({ ...prev, password: e.target.value }))}
+                            onChange={(e) =>
+                              setCreateUserForm((prev) => ({
+                                ...prev,
+                                password: e.target.value,
+                              }))
+                            }
                             placeholder="••••••••"
                             className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500/50 outline-none transition-all placeholder:text-slate-700 font-mono"
                           />
                         </div>
                         {showCreateUserModal.role === "Student" && (
                           <div className="space-y-1.5">
-                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Grado/Grupo Primario</label>
-                            <input 
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                              Grado/Grupo Primario
+                            </label>
+                            <input
                               type="text"
                               value={createUserForm.grade}
-                              onChange={(e) => setCreateUserForm(prev => ({ ...prev, grade: e.target.value }))}
+                              onChange={(e) =>
+                                setCreateUserForm((prev) => ({
+                                  ...prev,
+                                  grade: e.target.value,
+                                }))
+                              }
                               placeholder="Ej. 1A"
                               className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-white text-sm focus:border-cyan-500/50 outline-none transition-all placeholder:text-slate-700 uppercase"
                             />
@@ -6354,34 +8356,56 @@ export default function App() {
                       </div>
 
                       <button
-                        disabled={isCreatingUser || !createUserForm.email || !createUserForm.password || !createUserForm.username}
+                        disabled={
+                          isCreatingUser ||
+                          !createUserForm.email ||
+                          !createUserForm.password ||
+                          !createUserForm.username
+                        }
                         onClick={async () => {
                           setIsCreatingUser(true);
                           try {
                             await supabaseService.adminCreateUser({
                               email: createUserForm.email,
                               password: createUserForm.password,
-                              username: createUserForm.username,
+                              username: createUserForm.username
+                                .trim()
+                                .toUpperCase(),
                               role: showCreateUserModal.role,
-                              grade: createUserForm.grade || '1',
-                              assignedGroups: []
+                              grade: createUserForm.grade || "1",
+                              assignedGroups: [],
                             });
-                            
-                            toast.success(`¡${showCreateUserModal.role === "Teacher" ? "Docente" : "Alumno"} creado exitosamente!`);
-                            setShowCreateUserModal({ isOpen: false, role: "Teacher" });
-                            setCreateUserForm({ username: "", email: "", password: "", grade: "" });
+
+                            toast.success(
+                              `¡${showCreateUserModal.role === "Teacher" ? "Docente" : "Alumno"} creado exitosamente!`,
+                            );
+                            setShowCreateUserModal({
+                              isOpen: false,
+                              role: "Teacher",
+                            });
+                            setCreateUserForm({
+                              username: "",
+                              email: "",
+                              password: "",
+                              grade: "",
+                            });
                             loadUsers();
                           } catch (err: any) {
-                            toast.error(`Error: ${err.message || "No se pudo crear el usuario"}`);
+                            toast.error(
+                              `Error: ${err.message || "No se pudo crear el usuario"}`,
+                            );
                           } finally {
                             setIsCreatingUser(false);
                           }
                         }}
                         className={cn(
                           "w-full py-5 rounded-2xl font-black uppercase tracking-widest text-xs transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2",
-                          isCreatingUser || !createUserForm.email || !createUserForm.password || !createUserForm.username
+                          isCreatingUser ||
+                            !createUserForm.email ||
+                            !createUserForm.password ||
+                            !createUserForm.username
                             ? "bg-slate-800 text-slate-600 cursor-not-allowed"
-                            : "bg-cyan-600 hover:bg-cyan-500 text-white shadow-cyan-500/20"
+                            : "bg-cyan-600 hover:bg-cyan-500 text-white shadow-cyan-500/20",
                         )}
                       >
                         {isCreatingUser ? (
@@ -6414,7 +8438,12 @@ export default function App() {
                           ¿Confirmar Borrado?
                         </h3>
                         <p className="text-slate-400 text-sm font-medium leading-relaxed">
-                          Estás a punto de borrar a <span className="text-white font-bold">{userToDelete.name}</span> ({userToDelete.role}). Esta acción no se puede deshacer.
+                          Estás a punto de borrar a{" "}
+                          <span className="text-white font-bold">
+                            {userToDelete.name}
+                          </span>{" "}
+                          ({userToDelete.role}). Esta acción no se puede
+                          deshacer.
                         </p>
                       </div>
                     </div>
@@ -6426,7 +8455,9 @@ export default function App() {
                           setIsDeletingUser(true);
                           try {
                             await supabaseService.deleteUser(userToDelete.id);
-                            toast.success(`${userToDelete.role} eliminado con éxito.`);
+                            toast.success(
+                              `${userToDelete.role} eliminado con éxito.`,
+                            );
                             setUserToDelete(null);
                             loadUsers();
                           } catch (err: any) {

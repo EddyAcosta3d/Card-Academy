@@ -177,7 +177,8 @@ export const supabaseService = {
     }
   },
 
-  async signUp(username: string, password: string, role: UserRole, grade?: Grade, teacherData?: { assignedSubjects: string[], assignedGroups: string[] }) {
+  async signUp(rawUsername: string, password: string, role: UserRole, grade?: Grade, teacherData?: { assignedSubjects: string[], assignedGroups: string[] }) {
+    const username = rawUsername.trim().toUpperCase();
     const email = normalizeEmail(username);
     console.log(`[Supabase Auth] Intentando registrar: ${email} (Original: ${username})`);
     
@@ -189,7 +190,7 @@ export const supabaseService = {
         data: {
           role,
           grade,
-          username: username.trim(),
+          username: username,
           assignedSubjects: teacherData?.assignedSubjects || (role === 'Student' ? ["math_2"] : []),
           assignedGroups: teacherData?.assignedGroups || (role === 'Student' ? [grade || "2A"] : [])
         }
@@ -251,6 +252,20 @@ export const supabaseService = {
       });
 
     if (profileError) throw profileError;
+
+    // Notify admins about the new user!
+    try {
+      const roleName = role === "Student" ? "El alumno" : role === "Teacher" ? "El profesor" : "El usuario admin";
+      const groupInfo = role === "Student" ? ` (Grupo ${grade || "S/G"})` : "";
+      
+      this.notifyAdmins(
+        "Nuevo Registro Académico 📝",
+        `${roleName} @${username}${groupInfo} ha creado su cuenta.`,
+        "info"
+      );
+    } catch (notifErr) {
+      console.error("[Supabase] Error triggers registration notification:", notifErr);
+    }
 
     return { user: dataAuth.user, stats: initialStats };
   },
@@ -407,7 +422,7 @@ export const supabaseService = {
 
   async updateUserStats(userId: string, stats: Partial<UserStats>) {
     const updateData: any = {};
-    if (stats.username !== undefined) updateData.username = stats.username;
+    if (stats.username !== undefined) updateData.username = stats.username.trim().toUpperCase();
     if (stats.role !== undefined) updateData.role = stats.role;
     if (stats.grade !== undefined) updateData.grade = stats.grade;
     if (stats.tokens !== undefined) updateData.tokens = stats.tokens;
@@ -706,6 +721,37 @@ export const supabaseService = {
         type,
         isRead: false
       });
+    }
+  },
+
+  async notifyAdmins(title: string, message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') {
+    try {
+      // Find all admins in table
+      const { data: admins } = await supabase
+        .from('users')
+        .select('id')
+        .eq('role', 'Admin');
+      
+      const adminIds = new Set<string>();
+      if (admins && admins.length > 0) {
+        admins.forEach(ad => {
+          if (ad.id) adminIds.add(ad.id);
+        });
+      }
+      
+      // Also always include user with username 'admin' as fallback
+      const fallbackAdminId = await this.findUserByUsername('admin');
+      if (fallbackAdminId) {
+        adminIds.add(fallbackAdminId);
+      }
+      
+      // Send notification to each admin
+      const sendPromises = Array.from(adminIds).map(adminId => 
+        this.sendNotification(adminId, title, message, type)
+      );
+      await Promise.all(sendPromises);
+    } catch (e) {
+      console.error('[Supabase] Error notifying admins:', e);
     }
   }
 };

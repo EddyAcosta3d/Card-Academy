@@ -50,7 +50,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, masterTeacherKey,
 
   const handleAuth = async (action: 'signin' | 'signup') => {
     // Basic normalization as requested
-    const normUser = username.trim();
+    const normUser = username.trim().toUpperCase();
     const rawPass = password;
     const normKey = teacherVerifyKey.trim().toUpperCase();
     const normMasterKey = (masterTeacherKey || "").trim().toUpperCase();
@@ -158,7 +158,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, masterTeacherKey,
   };
 
   const handleForgotPassword = async () => {
-    const normUser = forgotUsername.trim();
+    const normUser = forgotUsername.trim().toUpperCase();
     const rawPass = forgotNewPassword;
     const normKey = forgotMasterKey.trim().toUpperCase();
 
@@ -195,7 +195,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, masterTeacherKey,
   };
 
   const handleTeacherNext = () => {
-    const normUser = username.trim();
+    const normUser = username.trim().toUpperCase();
     const rawPass = password;
     const normKey = teacherVerifyKey.trim().toUpperCase();
     const normMasterKey = (masterTeacherKey || "").trim().toUpperCase();
@@ -386,7 +386,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, masterTeacherKey,
                       type="text" 
                       placeholder="USUARIO"
                       value={forgotUsername}
-                      onChange={(e) => setForgotUsername(e.target.value)}
+                      onChange={(e) => setForgotUsername(e.target.value.toUpperCase())}
                       className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 lg:py-5 pl-14 pr-6 text-sm font-black uppercase tracking-[0.2em] text-white focus:outline-none focus:border-indigo-500 transition-all placeholder:text-slate-700"
                       style={{ textTransform: 'uppercase' }}
                     />
@@ -416,7 +416,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, masterTeacherKey,
                       type="password" 
                       placeholder="LLAVE DE VERIFICACIÓN"
                       value={forgotMasterKey}
-                      onChange={(e) => setForgotMasterKey(e.target.value)}
+                      onChange={(e) => setForgotMasterKey(e.target.value.toUpperCase())}
                       className="w-full bg-slate-950 border border-indigo-500/30 rounded-2xl py-4 lg:py-5 pl-14 pr-6 text-sm font-black uppercase tracking-[0.2em] text-white focus:outline-none focus:border-indigo-500 transition-all placeholder:text-slate-700 shadow-lg shadow-indigo-500/5 font-mono"
                     />
                   </div>
@@ -432,7 +432,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, masterTeacherKey,
                           type="text" 
                           placeholder={signupRole === 'Teacher' && isSignupMode ? "NOMBRE COMPLETO" : "USUARIO"}
                           value={username}
-                          onChange={(e) => setUsername(e.target.value)}
+                          onChange={(e) => setUsername(e.target.value.toUpperCase())}
                           onKeyDown={(e) => e.key === 'Enter' && handleAuth(isSignupMode ? 'signup' : 'signin')}
                           className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 lg:py-5 pl-14 pr-6 text-sm font-black uppercase tracking-[0.2em] text-white focus:outline-none focus:border-indigo-500 transition-all placeholder:text-slate-700"
                           style={{ textTransform: 'uppercase' }}
@@ -465,7 +465,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, masterTeacherKey,
                         type={showTeacherVerifyKey ? "text" : "password"} 
                         placeholder="LLAVE DE VERIFICACIÓN"
                         value={teacherVerifyKey}
-                        onChange={(e) => setTeacherVerifyKey(e.target.value)}
+                        onChange={(e) => setTeacherVerifyKey(e.target.value.toUpperCase())}
                         className="w-full bg-slate-950 border border-violet-500/30 rounded-2xl py-4 lg:py-5 pl-14 pr-14 text-sm font-black uppercase tracking-[0.2em] text-white focus:outline-none focus:border-violet-500 transition-all placeholder:text-slate-700 shadow-lg shadow-violet-500/5"
                         style={{ textTransform: 'uppercase' }}
                       />
