@@ -421,19 +421,20 @@ IMPORTANTE - Perfil de los alumnos de secundaria de bajos recursos y bajo nivel 
 
       console.log("[Gemini API] Generando desafío diario de cultura general...");
 
-      const prompt = `Genera una pregunta de trivia o curiosidad de cultura general de opción múltiple muy interesante en español, diseñada especialmente para alumnos de secundaria de bajos recursos con bajo nivel educativo. 
+      const prompt = `Genera una pregunta de cultura general de opción múltiple interactiva y súper divertida para jóvenes de secundaria en México.
 
-Instrucciones de lenguaje y diseño:
-1. El lenguaje debe ser extremadamente directo, sencillo, cercano y claro. Evita por completo tecnicismos, palabras rebuscadas, conceptos elevados o vocabulario avanzado.
-2. La pregunta debe basarse en un tema cercano, ameno, de la vida cotidiana, historia o geografía básica de México, o curiosidades de la naturaleza y animales, para que no resulte frustrante.
-3. Proporciona exactamente 4 opciones de respuesta cortas y simples en un arreglo.
-4. Indica cuál de las opciones (índice 0, 1, 2 o 3) es la correcta.`;
+Pautas obligatorias:
+1. SÚPER CORTA Y DIRECTA: La pregunta debe tener menos de 10 palabras en total. Ve directo al grano sin textos largos de introducción.
+2. SIN TANTO TEXTO: Toda la pregunta y las respuestas deben leerse en 5 segundos.
+3. OPCIONES MUY CORTAS: Cada una de las 4 opciones de respuesta debe ser de 1 a 3 palabras.
+4. MUY SENCILLA Y ACCESIBLE: El tema debe ser súper básico, de nivel secundaria (animales, naturaleza, cuerpo humano básico, o geografía elemental de México) para que no sea frustrante ni aburrida.
+5. Proporciona exactamente 4 opciones de respuesta en un arreglo y el índice de la opción correcta (0, 1, 2 o 3).`;
 
       const response = await ai.models.generateContent({
         model: "gemini-3.5-flash",
         contents: prompt,
         config: {
-          systemInstruction: "Eres un redactor y docente empático especializado en la enseñanza a jóvenes de secundaria de escasos recursos y bajo nivel de lectura en México. Tu lenguaje es siempre muy simple, directo, claro y libre de tecnicismos complejos.",
+          systemInstruction: "Eres un maestro de secundaria súper alegre y empático. Redactas trivias de cultura general sumamente cortas (máximo 10 palabras), ultra sencillas, fáciles de leer y muy amigables para alumnos con bajo nivel de lectura en México.",
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -487,10 +488,12 @@ Instrucciones de lenguaje y diseño:
 
       const prompt = `${subPrompt}
 
-Pautas críticas de lenguaje para el alumno de bajos recursos y bajo nivel:
-1. El lenguaje en español DEBE ser sumamente sencillo, directo y de fácil lectura. No uses explicaciones largas, abstractas o términos avanzados que los alumnos no entiendan.
-2. Si es posible, asocia el tema con algo práctico del entorno inmediato y familiar del alumno (compras simples, objetos domésticos, animales, la naturaleza, actividades cotidianas).
-3. Entrega exactamente 4 opciones cortas, claras y fáciles de comprender. Una de ellas debe ser la correcta y el resto distractores amigables no confusos.`;
+Pautas obligatorias:
+1. SÚPER CORTA Y DIRECTA: La pregunta debe tener muy poco texto (menos de 15 palabras). Evita explicaciones largas, abstractas o términos avanzados que los alumnos no entiendan.
+2. SIN TANTO TEXTO: Toda la pregunta y las respuestas deben leerse de forma rápida y sin fatiga.
+3. OPCIONES MUY CORTAS: Cada una de las 4 opciones de respuesta debe ser súper clara y de pocas palabras.
+4. Si es posible, asocia el tema con algo práctico del entorno inmediato (compras, cosas en casa, animales, clima).
+5. Entrega exactamente 4 opciones de respuesta y el índice basado en cero de la respuesta correcta (0-3).`;
 
       const response = await ai.models.generateContent({
         model: "gemini-3.5-flash",

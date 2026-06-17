@@ -11,8 +11,8 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         name: 'Literatura y Lenguaje',
         tasks: [
           { id: 'task_esp_1_basic', title: 'Quiz IA: Lenguaje', description: 'Evaluación automática sobre conceptos base.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
-          { id: 'task_esp_1_inter', title: 'Análisis de Cuentos', description: 'Identifica la estructura narrativa.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
-          { id: 'task_esp_1_hard', title: 'Crónica Literaria', description: 'Escribe una crónica sobre un evento escolar.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_esp_1_inter', title: 'Análisis de Cuentos', description: 'Identifica la estructura narrativa en tu libreta.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 }, instructions: '1. Elige tu cuento breve favorito o uno de tu libro de texto de Español.\n2. En tu libreta, dibuja una tabla con 3 columnas tituladas: Inicio, Desarrollo (Nudo) y Final (Desenlace).\n3. Escribe de 2 a 3 renglones en cada columna explicando qué ocurre en esa parte de la historia con letra clara y buena ortografía.\n4. Firma tu página abajo con tu nombre completo y fecha escolar.\n5. Toma una foto nítida de tu libreta de frente y súbela aquí para que tu profesor la apruebe.' },
+          { id: 'task_esp_1_hard', title: 'Crónica Literaria', description: 'Escribe una crónica sobre un evento escolar.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: '1. Elige un evento emocionante de tu escuela Jacobo (como el Día de Muertos, un partido del recreo, o tu primer día de secundaria).\n2. En tu libreta, escribe una crónica detallada de 1 página narrando paso a paso qué pasó al inicio, durante el desarrollo de la fiesta, y cómo concluyó.\n3. Añade descripciones de los colores, los sonidos y cómo te sentías.\n4. Dibuja abajo un pequeño boceto que ilustre la mejor escena del día.\n5. Asegúrate de que tu letra sea legible y las palabras estén bien escritas. Sube una foto de tu escrito terminado.' }
         ]
       }]
     },
@@ -26,7 +26,7 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         tasks: [
           { id: 'task_mat_1_basic', title: 'Quiz IA: Aritmética', description: 'Prueba de agilidad mental matemática.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
           { id: 'task_mat_1_inter', title: 'Proporciones Reales', description: 'Calcula escalas en un mapa real.', difficulty: 'Medium', type: 'Quiz', quizOptions: ['1:100', '1:500', '1:1000', '1:50'], quizAnswer: 1, reward: { tokens: 50 } },
-          { id: 'task_mat_1_hard', title: 'Arquitectura Geométrica', description: 'Diseña un sólido platónico.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_mat_1_hard', title: 'Arquitectura Geométrica', description: 'Diseña un sólido platónico.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: '1. Con ayuda de una regla y lápiz, dibuja el desarrollo plano (plantilla completa) para armar un cubo o un prisma triangular en tu cuaderno o en una hoja blanca.\n2. No olvides agregar las pestañas a los costados de cada cara para poder unirlas.\n3. Recorta la figura y ármala usando pegamento, masking o cinta adhesiva.\n4. Si no cuentas con tijeras, dibuja detalladamente el cuerpo geométrico en 3D en tu libreta, sombreando cada una de sus caras con colores distintos.\n5. Sube una foto sosteniendo tu sólido tridimensional o mostrando tu dibujo coloreado.' }
         ]
       }]
     },
@@ -39,8 +39,8 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         name: 'Civilizaciones',
         tasks: [
           { id: 'task_his_1_basic', title: 'Quiz IA: Historia Universal', description: 'Conceptos clave de la antigüedad.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
-          { id: 'task_his_1_inter', title: 'Línea de Vida', description: 'Compara dos civilizaciones clásicas.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
-          { id: 'task_his_1_hard', title: 'Ensayo sobre Imperios', description: 'Impacto de la caída de Roma.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_his_1_inter', title: 'Línea de Vida', description: 'Compara dos civilizaciones clásicas.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 }, instructions: '1. Traza una línea vertical en medio de una hoja de tu libreta para formar dos columnas: una para el Imperio Romano y otra para el Antiguo Egipto.\n2. En cada columna escribe 3 datos históricos súper importantes de cada civilización (por ejemplo: sus grandes construcciones, su río principal, qué comerciaban o sus dioses).\n3. Haz un dibujo pequeño al final de cada columna representativo (por ejemplo: el Coliseo Romano y una Esfinge de Egipto).\n4. Sube una foto completa de la página de tu cuaderno de frente.' },
+          { id: 'task_his_1_hard', title: 'Ensayo sobre Imperios', description: 'Impacto de la caída de Roma en la vida actual.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: '1. Repasa en tu libro de Historia qué ocurrió en Europa de forma cotidiana tras la caída del Imperio Romano en el año 476 d.C.\n2. Redacta un escrito explicativo de 3 párrafos en tu cuaderno:\n   - Párrafo 1: ¿Por qué colapsó el imperio y qué pasó con las ciudades?\n   - Párrafo 2: ¿Cómo cambió la vida escolar y familiar en la Edad Media?\n   - Párrafo 3: ¿Qué invento de Roma (como el calendario, la arquitectura o las leyes) consideras que sigue ayudando más en México hoy?\n3. Escribe tu nombre grande arriba de la página, tómale foto y súbela.' }
         ]
       }]
     },
@@ -53,8 +53,8 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         name: 'Seres Vivos',
         tasks: [
           { id: 'task_bio_1_basic', title: 'Quiz IA: Células', description: 'Fundamentos de la vida.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
-          { id: 'task_bio_1_inter', title: 'Cadena Alimenticia', description: 'Dibuja un ecosistema local.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
-          { id: 'task_bio_1_hard', title: 'Proyecto Herbario', description: 'Colecciona y clasifica 5 hojas.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_bio_1_inter', title: 'Cadena Alimenticia', description: 'Dibuja un ecosistema local.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 }, instructions: '1. Piensa en la fauna y plantas típicas de tu región (como el desierto de Sinaloa, el campo, o el cerro más cercano).\n2. En una página de tu libreta, dibuja una cadena alimenticia clara utilizando flechas que unan a los siguientes participantes:\n   - Un productor (ej. planta o pasto mexicano)\n   - Un consumidor primario (ej. chapulín, conejo o grillo)\n   - Un consumidor secundario (ej. lagartija, coyote o halcón)\n3. Colorea bien cada dibujo y rotula sus nombres abajo de cada ser vivo.\n4. Sube una foto con buena definición para que tu maestro pueda revisarlo.' },
+          { id: 'task_bio_1_hard', title: 'Proyecto Herbario', description: 'Colecciona y clasifica 5 hojas de tu calle.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: '1. Sal al patio de tu casa, a tu banqueta, o al jardín de la escuela de día y recoge 5 hojas de plantas o árboles caídas en el piso.\n2. Pégalas ordenadamente con cinta o pegamento en una hoja de tu cuaderno.\n3. Al lado de cada hoja, anota sus características observables: ¿Cómo es su contorno (con piquitos, liso, de sierra)?, ¿Qué color tiene?, y ¿Cómo se llama el árbol si lo conoces?\n4. Si no puedes conseguir hojas reales, dibuja con lujo de detalles 5 hojas en tu libreta y clasifícalas igual.\n5. Sube una foto clara de tu página de herbario.' }
         ]
       }]
     },
@@ -67,8 +67,8 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         name: 'Sistemas Técnicos',
         tasks: [
           { id: 'task_tec_1_basic', title: 'Quiz IA: Herramientas', description: 'Identificación de funciones.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
-          { id: 'task_tec_1_inter', title: 'Diagrama de Procesos', description: 'Dibuja el flujo de un servicio.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
-          { id: 'task_tec_1_hard', title: 'Prototipo de Madera', description: 'Construye un objeto funcional.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_tec_1_inter', title: 'Diagrama de Procesos', description: 'Dibuja el flujo de un servicio cotidiano.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 }, instructions: '1. Selecciona un servicio o tarea técnica simple que uses en casa (como la ruta para hacer tortillas, cómo prender la estufa de gas de forma segura o los pasos para lavarse las manos en la escuela).\n2. En tu libreta, dibuja un diagrama usando flechas y cajas secuenciales para detallar el flujo exacto de pasos ordenadamente.\n3. Añade colores para distinguir el inicio, las acciones intermedias, e indica los puntos donde se debe tener cuidado (ej. apagar el gas).\n4. Sube una foto completa de tu diagrama de flujo.' },
+          { id: 'task_tec_1_hard', title: 'Prototipo de Madera o Cartón', description: 'Construye un objeto funcional reciclado.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: '1. Diseña y construye un soporte para tu celular, tableta o u organizador escolar para tus lápices utilizando únicamente materiales de desecho del hogar (como cartón, cilindros de papel higiénico, envases vacíos limpios o retazos de madera).\n2. El objeto debe ser estable y cumplir su función sin desarmarse.\n3. Decóralo a tu gusto usando crayolas, colores, marcadores o pintura.\n4. Sube una foto presumiendo tu prototipo terminado de frente.' }
         ]
       }]
     },
@@ -81,8 +81,8 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         name: 'Identidad y Valores',
         tasks: [
           { id: 'task_fce_1_basic', title: 'Quiz IA: Valores', description: 'Reconoce valores universales.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
-          { id: 'task_fce_1_inter', title: 'Derechos del Niño', description: 'Identifica 5 derechos fundamentales.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
-          { id: 'task_fce_1_hard', title: 'Proyecto Comunitario', description: 'Propón una mejora para tu colonia.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_fce_1_inter', title: 'Derechos del Niño', description: 'Identifica 5 derechos fundamentales escolares.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 }, instructions: '1. En tu cuaderno, haz un listado decorado de los 5 derechos de los niños y adolescentes que consideres de mayor importancia en tu escuela y hogar.\n2. Junto a cada derecho seleccionado, redacta un renglón indicando un ejemplo práctico de cómo se puede cumplir en tu vida para apoyar a otros.\n3. Usa tinta legible y dale un diseño creativo de márgenes.\n4. Sube la foto del escrito.' },
+          { id: 'task_fce_1_hard', title: 'Proyecto Comunitario', description: 'Propón una mejora para tu colonia.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: '1. Imagina que te eligen líder vecinal o presidente escolar.\n2. Escribe una carta formal de media cuartilla dirigida al gobierno de tu alcaldía o al director del plantel escolar solicitando una mejora que beneficie a todos.\n3. Describe:\n   - ¿Cuál es la problemática urgente? (ej. baches, luminarias rotas, falta de botes de basura)\n   - ¿Cuál es tu propuesta detallada de solución económica?\n   - ¿Cómo ayudará esto a todos los vecinos o compañeros?\n4. Termina la carta con tu nombre grande, firma y fecha. ¡Súbela para aprobación!' }
         ]
       }]
     },
@@ -95,8 +95,8 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         name: 'Espacio Geográfico',
         tasks: [
           { id: 'task_geo_1_basic', title: 'Quiz IA: Mapas', description: 'Coordenadas y proyecciones.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
-          { id: 'task_geo_1_inter', title: 'Relieve Regional', description: 'Identifica montañas cercanas.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
-          { id: 'task_geo_1_hard', title: 'Planisferio Político', description: 'Ubica los 10 países con más población.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_geo_1_inter', title: 'Relieve Regional', description: 'Identifica montañas cercanas y clima regional.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 }, instructions: '1. Investiga o repasa con tu maestro de Geografía cuáles son los accidentes del relieve más representativos en tu estado o municipio de México (montañas, cerros, valles, ríos o lagos).\n2. En tu libreta anota el nombre de la elevación o río más cercano a tu colonia (como el Cerro de la Silla, el río Culiacán, etc.).\n3. Anota: ¿Cuál es su clima dominante? y ¿Por qué es importante conservarlo limpio?\n4. Añade un dibujo coloreado del relieve en tu cuaderno y súbelo aquí.' },
+          { id: 'task_geo_1_hard', title: 'Planisferio Político', description: 'Ubica los 10 países con más población mundial.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: '1. Consigue un mapa planisferio básico sin nombres o dibuja en una página completa de tu cuaderno un esquema simple de la silueta de los continentes.\n2. En tu mapa, ubica coloreando y colocando números del 1 al 10 las naciones con mayor número de habitantes del planeta entero.\n3. En la parte de abajo de tu mapa, escribe de forma ordenada de mayor a menor el nombre de estos 10 países.\n4. Sube la foto del mapa coloreado y clasificado.' }
         ]
       }]
     },
@@ -123,8 +123,8 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         name: 'Artes Visuales',
         tasks: [
           { id: 'task_art_1_basic', title: 'Quiz IA: Color', description: 'Círculo cromático básico.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
-          { id: 'task_art_1_inter', title: 'Puntillismo', description: 'Crea una obra usando solo puntos.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
-          { id: 'task_art_1_hard', title: 'Escultura Reciclada', description: 'Usa cartón para crear un animal.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_art_1_inter', title: 'Puntillismo', description: 'Crea una obra usando solo puntos de colores.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 }, instructions: '1. Dibuja de manera muy tenue con lápiz la silueta de un animal, flor o fruta en tu cuaderno.\n2. Usando solamente marcadores de colores, plumas o lápices de colores bien afilados, colorea el interior rellenándolo ÚNICAMENTE con puntos. No se vale hacer líneas continuas o pintar como siempre.\n3. Explora poner puntos más juntos en las zonas de sombra y más separados para dar luz.\n4. Sube la foto del dibujo terminado de cerca.' },
+          { id: 'task_art_1_hard', title: 'Escultura Reciclada', description: 'Usa cartón para crear un animal tridimensional.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: '1. Reutiliza el cartón de alguna caja de cereal, de huevos o rollos de papel sanitario para fabricar tu figura favorita.\n2. Recorta piezas encajables o únelas con pegamento escolar para que tu animalito de juguete se mantenga firme por sí solo sobre la mesa o tu pupitre.\n3. Coloréalo, píntalo o adórnalo creativamente usando marcas de plumas o retazos de periódico.\n4. Sube la foto de la escultura junto a tu libreta donde se observe tu proceso de manualidad.' }
         ]
       }]
     },
@@ -137,8 +137,8 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         name: 'Transversalidad',
         tasks: [
           { id: 'task_int_cur_1_basic', title: 'Reto Integrador', description: 'Propón una solución que use 2 materias.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
-          { id: 'task_int_cur_1_inter', title: 'Proyecto de Vida', description: 'Mapa mental de tus metas escolares.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
-          { id: 'task_int_cur_1_hard', title: 'Feria de Ciencias', description: 'Presenta un experimento integral.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_int_cur_1_inter', title: 'Proyecto de Vida', description: 'Mapa mental de tus metas escolares actuales.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 }, instructions: '1. En el centro de una página de tu cuaderno, dibuja un círculo coloreado que diga "Mis Metas Escolares" o una caricatura tuya escolar.\n2. Traza 4 ramas o flechas de diferentes colores hacia los lados indicando metas precisas para este año (ej. aprender inglés, participar más en matemáticas, entregar todas las tareas o jugar más sano en el recreo).\n3. Para cada objetivo, escribe debajo una acción clara que harás en la semana.\n4. Sube una foto legible de tu mapa mental personalizado.' },
+          { id: 'task_int_cur_1_hard', title: 'Feria de Ciencias', description: 'Presenta un experimento integral casero.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: '1. Diseña un experimento físico o químico clásico y súper seguro con materiales de cocina (como un volcán de bicarbonato y vinagre, el experimento de la pimienta y el jabón, o la lámpara de lava casera).\n2. Ejecuta el experimento con supervisión o ayuda de tu familia.\n3. En tu cuaderno escribe: el nombre del experimento, la lista de materiales, los pasos que seguiste y qué reacción científica ocurrió.\n4. Sube una foto de tu experimento reaccionando al lado de tu cuaderno con tus apuntes legibles.' }
         ]
       }]
     }
@@ -154,7 +154,7 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         tasks: [
           { id: 'task_esp_2_basic', title: 'Quiz IA: Géneros', description: 'Identifica tipos de texto.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
           { id: 'task_esp_2_inter', title: 'Debate Estructurado', description: 'Prepara argumentos para un tema.', difficulty: 'Medium', type: 'Exercise', reward: { tokens: 50 } },
-          { id: 'task_esp_2_hard', title: 'Antología Poética', description: 'Crea una colección de poemas propios.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_esp_2_hard', title: 'Antología Poética', description: 'Crea una colección de poemas propios.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: '1. En una página limpia de tu libreta, escribe una mini-antología compuesta por 3 poemas originales escritos por ti.\n2. Cada poema debe tener al menos 2 estrofas con 4 versos cada una, y tratar sobre temas importantes para ti (tu familia, amigos, la escuela Jacobo o tu ciudad).\n3. Revisa la rima y el ritmo poético de cada estrofa.\n4. Para darle un toque de libro real, decora los márgenes de cada poema con dibujos sencillos relacionados con el tema de tus versos.\n5. Sube una foto a color de tu antología escrita.' }
         ]
       }]
     },
@@ -181,8 +181,8 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         name: 'Historia de México I',
         tasks: [
           { id: 'task_his_2_basic', title: 'Quiz IA: Independencia', description: 'Personajes y fechas clave.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
-          { id: 'task_his_2_inter', title: 'Mapa de Virreinatos', description: 'Dibuja la división territorial.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
-          { id: 'task_his_2_hard', title: 'Ensayo Reformas Borbónicas', description: 'Impacto en la Nueva España.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_his_2_inter', title: 'Mapa de Virreinatos', description: 'Dibuja la división territorial.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 }, instructions: '1. En tu libreta, calca o dibuja un mapa básico de la República Mexicana.\n2. Identifica y colorea con colores contrastantes el área que correspondía al Virreinato de la Nueva España durante el siglo XVII.\n3. Señala y escribe los nombres de las 3 ciudades mineras más importantes de dicho periodo (Zacatecas, Guanajuato y Taxco) dibujando un pequeño pico de minería sobre ellas.\n4. Escribe abajo un título formal en letra de molde.\n5. Sube una foto nítida de tu mapa de frente.' },
+          { id: 'task_his_2_hard', title: 'Ensayo Reformas Borbónicas', description: 'Impacto en la Nueva España.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: '1. Investiga en tu libro cómo afectaron las medidas económicas españolas (reformas borbónicas) a las clases populares e indígenas en el siglo XVIII.\n2. Escribe una redacción crítica de media cuartilla (un párrafo introductorio, uno de desarrollo y otro de conclusión) en tu libreta analizando cómo el enojo por la subida de impuestos preparó el camino para la lucha por la Independencia.\n3. Asegúrate de cuidar los acentos e incluir tu nombre completo en la parte de arriba.\n4. Sube la foto del ensayo escolar.' }
         ]
       }]
     },
@@ -195,8 +195,8 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         name: 'Cinemática',
         tasks: [
           { id: 'task_fis_2_basic', title: 'Quiz IA: Velocidad', description: 'Calculos directos m/s.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
-          { id: 'task_fis_2_inter', title: 'Experimento de Caída Libre', description: 'Cronometra un objeto.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
-          { id: 'task_fis_2_hard', title: 'Cohete de Aire', description: 'Lanzamiento y cálculo parabólico.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_fis_2_inter', title: 'Experimento de Caída Libre', description: 'Cronometra un objeto.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 }, instructions: '1. Consigue dos hojas de papel idénticas. Arruga una de ellas con tus manos para formar una bola sólida y deja la otra hoja completamente lisa.\n2. Sostén ambos papeles a la misma altura y déjalos caer al mismo tiempo.\n3. En tu libreta escribe:\n   - ¿Cuál llegó al piso primero?\n   - Si las dos pesan exactamente lo mismo, ¿cómo influyó la resistencia y forma frente al aire?\n4. Coloca la bola de papel y la hoja lisa encima de tus apuntes y tómales una foto clara para subirla como evidencia.' },
+          { id: 'task_fis_2_hard', title: 'Cohete de Aire', description: 'Lanzamiento y cálculo parabólico.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: '1. Construye un cohete miniatura muy ligero enrollando papel de reúso y poniéndole un cono en la punta.\n2. Idea un eyector casero: puede ser soplando fuertemente a través de un popote largo introducido en el cohete, o aplastando súbitamente una botella de plástico vacía conectada al popote.\n3. Lánzalo horizontalmente 3 veces y mide aproximadamente la distancia máxima que avanzó en el aire en metros.\n4. En tu cuaderno dibuja el cohete, traza con línea punteada su trayectoria curva (parábola) y anota los metros de cada lanzamiento.\n5. Sube una foto de tu cohete hecho en casa y los apuntes de vuelo.' }
         ]
       }]
     },
@@ -210,7 +210,7 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         tasks: [
           { id: 'task_tec_2_basic', title: 'Quiz IA: Algoritmos', description: 'Lógica de programación básica.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
           { id: 'task_tec_2_inter', title: 'Página Web Simple', description: 'Maquetado en papel de una web.', difficulty: 'Medium', type: 'Exercise', reward: { tokens: 50 } },
-          { id: 'task_tec_2_hard', title: 'Base de Datos', description: 'Diseña el inventario de la escuela.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_tec_2_hard', title: 'Base de Datos', description: 'Diseña el inventario de la escuela.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: '1. Imagina que eres el encargado de organizar el inventario del salón de clases o de la tienda de la escuela.\n2. En tu libreta, dibuja una tabla con las columnas: Identificador (ID), Nombre del Artículo, Categoría, Precio de Venta y Cantidad Disponible.\n3. Registra detalladamente al menos 10 registros reales o supuestos (como cuadernos, gomas, refrescos, frituras, etc.).\n4. Abajo de la tabla, escribe las instrucciones para realizar una venta imaginaria que descuente una pieza del stock.\n5. Sube una foto nítida de tu base de datos escrita en papel.' }
         ]
       }]
     },
@@ -224,7 +224,7 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         tasks: [
           { id: 'task_fce_2_basic', title: 'Quiz IA: Constitución', description: 'Artículos básicos.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
           { id: 'task_fce_2_inter', title: 'Juez por un Día', description: 'Resuelve un caso ético escolar.', difficulty: 'Medium', type: 'Exercise', reward: { tokens: 50 } },
-          { id: 'task_fce_2_hard', title: 'Debate Democrático', description: 'Participa en un foro virtual.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_fce_2_hard', title: 'Debate Democrático', description: 'Participa en un foro virtual.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: '1. Reflexionemos con honestidad sobre un tema de mucha actualidad escolar: ¿Se debe permitir que los alumnos traigan y usen celulares dentro del salón durante las clases?\n2. En tu cuaderno, traza dos columnas: "Argumentos a Favor" (mínimo 3 ideas de cómo ayuda a aprender) y "Argumentos en Contra" (mínimo 3 ideas de cómo distrae o causa desunión).\n3. En los renglones finales redacta una pequeña opinión en donde expliques cuál es tu conclusión personal.\n4. Toma una foto con buena luz de tu análisis detallado en tu libreta y compártela.' }
         ]
       }]
     },
@@ -251,8 +251,8 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         name: 'Danza y Cuerpo',
         tasks: [
           { id: 'task_art_2_basic', title: 'Quiz IA: Danza Folklore', description: 'Ritmos regionales de México.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
-          { id: 'task_art_2_inter', title: 'Coreografía Corta', description: '30 segundos de baile libre.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
-          { id: 'task_art_2_hard', title: 'Vestuario Ancestral', description: 'Dibuja y explica un traje típico.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_art_2_inter', title: 'Coreografía Corta', description: '30 segundos de baile libre.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 }, instructions: '1. Escucha una cancion tradicional, folclórica o tu tema bailable sano preferido.\n2. Diseña una rutina de baile corta de 30 segundos usando movimientos alegres de pies y brazos.\n3. En tu cuaderno, escribe la lista ordenada de tus movimientos coreográficos (ej. Paso 1: inicio con palmas, Paso 2: zapateado cruzado, Paso 3: vuelta a la izquierda, etc.).\n4. Puedes grabar un video de tu baile o subir la foto de la rutina detallada escribiendo también un dibujo sencillo de un bailarín en acción.' },
+          { id: 'task_art_2_hard', title: 'Vestuario Ancestral', description: 'Dibuja y explica un traje típico.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: '1. Elige una vestimenta típica de un estado de México (como el traje de Chiapaneca, el de Charro, el huipil de Oaxaca, o el de Venado en Sonora).\n2. Dibuja a color en una hoja entera de tu cuaderno este hermoso vestuario con todos sus detalles.\n3. Señala con flechas qué representan sus colores, las flores bordadas o accesorios tradicionales.\n4. Escribe abajo en 3 renglones cuándo se suele portar este traje.\n5. Sube tu imagen.' }
         ]
       }]
     },
@@ -265,8 +265,8 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         name: 'Transversalidad',
         tasks: [
           { id: 'task_int_cur_2_basic', title: 'Reto Integrador', description: 'Propón una solución que use 2 materias.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
-          { id: 'task_int_cur_2_inter', title: 'Proyecto de Vida', description: 'Mapa mental de tus metas escolares.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
-          { id: 'task_int_cur_2_hard', title: 'Feria de Ciencias', description: 'Presenta un experimento integral.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_int_cur_2_inter', title: 'Proyecto de Vida', description: 'Mapa mental de tus metas escolares.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 }, instructions: '1. En tu libreta, dibuja una silueta simple de tu rostro mirando al frente, rodeada por las metas profesionales u oficios que te encantaría ejercer cuando seas un adulto (ej. médico, ingeniera, maestro, diseñadora, etc.).\n2. Conecta cada profesión con 2 valores humanos primordiales (como empatía, esfuerzo, disciplina o paciencia) que necesitarás ejercer para triunfar en tu trabajo.\n3. Redacta abajo una frase que te inspire a seguir estudiando diariamente.\n4. Sube la foto del mapa.' },
+          { id: 'task_int_cur_2_hard', title: 'Feria de Ciencias', description: 'Presenta un experimento integral.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: '1. Con cajitas, tubos de cartón, botellas limpias o tapas recicladas que tengas a la mano, planea y ensambla una maqueta a escala de tu "Salón de Clases del Futuro".\n2. Tu maqueta debe prever la comodidad de los estudiantes: buena ventilación, luz ecológica de día, botes para separar basura y tecnología útil.\n3. Si no consigues materiales, dibuja el plano técnico completo de este salón soñado con regla a color en tu libreta.\n4. Sube la foto del proyecto.' }
         ]
       }]
     }
@@ -282,7 +282,7 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         tasks: [
           { id: 'task_esp_3_basic', title: 'Quiz IA: Publicidad', description: 'Analiza mensajes persuasivos.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
           { id: 'task_esp_3_inter', title: 'Guion Dramático', description: 'Escribe una escena de teatro.', difficulty: 'Medium', type: 'Exercise', reward: { tokens: 50 } },
-          { id: 'task_esp_3_hard', title: 'Proyecto Editorial', description: 'Diseña una revista escolar.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_esp_3_hard', title: 'Proyecto Editorial', description: 'Diseña una revista escolar.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: '1. Diseña un formato para la portada de una revista escolar en tu libreta.\n2. Escribe a mano el artículo principal (mínimo 2 párrafos) sobre un suceso emocionante en la Escuela Jacobo (puede ser un triunfo deportivo, una iniciativa verde, o la instalación de la app).\n3. Incluye secciones secundarias como "Entrevistas", "Humor" o "Datos curiosos".\n4. Dibuja o pega una ilustración central que servirá de portada para tu revista.\n5. Sube una foto de la portada y su artículo de frente.' }
         ]
       }]
     },
@@ -296,7 +296,7 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         tasks: [
           { id: 'task_mat_3_basic', title: 'Quiz IA: Pitágoras', description: 'Cálculo de hipotenusas.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
           { id: 'task_mat_3_inter', title: 'Semejanza', description: 'Mide la sombra de un poste.', difficulty: 'Medium', type: 'Exercise', reward: { tokens: 50 } },
-          { id: 'task_mat_3_hard', title: 'Proyecto Estadístico', description: 'Encuesta escolar sobre la app.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_mat_3_hard', title: 'Proyecto Estadístico', description: 'Encuesta escolar sobre la app.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: '1. Elabora una pregunta sencilla sobre nuestra app de fichas o sobre la escuela (ej. "¿Cuál es tu avatar favorito de la Jacobo?" o "¿Cuántos tokens tienes acumulados?").\n2. Pregunta esto a 10 alumnos en tu hora de recreo o de forma controlada.\n3. En tu cuaderno, haz una tabla con las respuestas de cada encuestado.\n4. Diseña una gráfica de barras o de pastel de manera muy limpia con regla y de colores para resumir tus resultados.\n5. Sube una foto clara de tu tabla y tu bonita gráfica.' }
         ]
       }]
     },
@@ -310,7 +310,7 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         tasks: [
           { id: 'task_his_3_basic', title: 'Quiz IA: Guerra Fría', description: 'Muro de Berlín y Carrera Espacial.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
           { id: 'task_his_3_inter', title: 'Ensayo Globalización', description: 'Impacto económico en México.', difficulty: 'Medium', type: 'Exercise', reward: { tokens: 50 } },
-          { id: 'task_his_3_hard', title: 'Documental Histórico', description: 'Entrevista a un abuelo (video).', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_his_3_hard', title: 'Documental Histórico', description: 'Entrevista a un abuelo o adulto sobre el México del siglo pasado (video/escrito).', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: '1. Acércate a tus abuelos, a tus papás, o a un maestro que viviera en las décadas de los 70s, 80s o 90s.\n2. Pregúntales tres cosas básicas sobre esa época:\n   - ¿Cómo era ir a la escuela secundaria en aquel entonces?, ¿se usaban las tecnologías?\n   - ¿Qué jugaban en el recreo o con sus amigos de la colonia?\n   - ¿Cuáles eran las canciones, ropa o modas preferidas de los jóvenes en su juventud?\n3. Escribe en tu libreta el nombre del entrevistado y sus interesantes respuestas en un reporte formal de 1 página entera.\n4. Si te dan permiso, puedes grabar un audio/video corto o subir la foto de tu escrito legible.' }
         ]
       }]
     },
@@ -323,8 +323,8 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         name: 'Las Propiedades de los Materiales',
         tasks: [
           { id: 'task_qui_3_basic', title: 'Quiz IA: Tabla Periódica', description: 'Elementos y sus símbolos.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
-          { id: 'task_qui_3_inter', title: 'Mezclas y Compuestos', description: 'Experimento de separación de mezclas.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
-          { id: 'task_qui_3_hard', title: 'Reacciones Químicas', description: 'Explica el proceso de oxidación (video).', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_qui_3_inter', title: 'Mezclas y Compuestos', description: 'Experimento de separación de mezclas.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 }, instructions: '1. En un plato de plástico o de vidrio, mezcla una cucharada de arroz crudo con una cucharada de sal fina escolar.\n2. Planea un método para separar totalmente esos dos ingredientes sólidos de nuevo sin destruir sus propiedades.\n3. En tu cuaderno escribe:\n   - ¿Qué método usaste (filtración, imantación, tamizado, decantación)?\n   - ¿Cómo resultó tu procedimiento?\n4. Coloca el arroz ya separado y la sal limpia un lado de tus apuntes y toma una foto de la comprobación.' },
+          { id: 'task_qui_3_hard', title: 'Reacciones Químicas', description: 'Explica el proceso de oxidación física cotidiana.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: '1. Corta un trozo de manzana, pera o plátano fresco y déjalo expuesto directo al aire libre por 2 horas sin tapar.\n2. Al cabo de ese tiempo, anota en tu cuaderno los cambios físicos que observas (color amarillento/marrón oscuro, textura, olor).\n3. Explica qué causó esta reacción (oxidación enzimática en contacto con el oxígeno ambiental).\n4. ¿Cómo crees que se podría retardar este cambio (bañando la fruta en jugo de limón, envolviéndola en plástico, metiéndola al refrigerador)? Compruébalo y anota tus descubrimientos.\n5. Sube una foto de la manzana oxidada al lado de tus notas.' }
         ]
       }]
     },
@@ -338,7 +338,7 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         tasks: [
           { id: 'task_tec_3_basic', title: 'Quiz IA: Robótica', description: 'Componentes de un robot.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
           { id: 'task_tec_3_inter', title: 'Prototipo de App', description: 'Dibuja 5 pantallas de una app.', difficulty: 'Medium', type: 'Exercise', reward: { tokens: 50 } },
-          { id: 'task_tec_3_hard', title: 'Impresión 3D', description: 'Diseño CAD de una pieza.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_tec_3_hard', title: 'Impresión 3D', description: 'Diseño CAD en papel de una pieza útil.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: '1. Piensa en una pieza escolar rota o que haga falta en el plantel (un perchero para las mochilas, una pieza para reparar la persiana, o un estuche organizador de plumones para el pizarrón).\n2. En una página completa de tu libreta, dibuja un "Plano Técnico tridimensional" (isométrico) de este objeto de forma limpia.\n3. Rotula las medidas principales que debería tener (alto, ancho, profundidad, grosor de las paredes) pensadas en centímetros reales.\n4. Señala de qué material sugerirías fabricarlo para que no se rompa (plástico rígido PLA, filamento flexible, etc.).\n5. Sube la foto del plano.' }
         ]
       }]
     },
@@ -352,7 +352,7 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         tasks: [
           { id: 'task_fce_3_basic', title: 'Quiz IA: Derechos Humanos', description: 'Organismos internacionales.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
           { id: 'task_fce_3_inter', title: 'Campaña Social', description: 'Crea un poster contra el bullying.', difficulty: 'Medium', type: 'Exercise', reward: { tokens: 50 } },
-          { id: 'task_fce_3_hard', title: 'Voluntariado', description: 'Realiza 1 hora de servicio social.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_fce_3_hard', title: 'Voluntariado', description: 'Realiza 1 hora de servicio social en tu escuela u hogar.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: '1. Convierte la empatía en acción real de servicio. Realiza una de estas acciones positivas durante el día escolar o en tu hogar:\n   - Ayuda a recoger y limpiar los pupitres de tu salón al finalizar las clases.\n   - Apoya a tu familia ordenando tu cuarto o barriendo tu casa.\n   - Planta una plantita en tu escuela o en casa y riégala de forma amorosa.\n2. En tu libreta escribe 3 renglones describiendo qué buena acción hiciste y cómo te sentiste al contribuir al bienestar general de los tuyos.\n3. Sube la foto de tu libreta firmada o una foto tuya colaborando.' }
         ]
       }]
     },
@@ -379,8 +379,8 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         name: 'Teatro y Performance',
         tasks: [
           { id: 'task_art_3_basic', title: 'Quiz IA: Dramaturgia', description: 'Autores clásicos universales.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
-          { id: 'task_art_3_inter', title: 'Monólogo', description: 'Interpreta un fragmento de Hamlet.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
-          { id: 'task_art_3_hard', title: 'Producción Audiovisual', description: 'Edita un corto de 5 minutos.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_art_3_inter', title: 'Monólogo', description: 'Interpreta un fragmento teatral o histórico.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 }, instructions: '1. Elige una de tus frases favoritas de un personaje teatral célebre (o una frase icónica de un prócer patrio como Don Miguel Hidalgo o Benito Juárez).\n2. Escríbela en tu libreta en letra grande y de manera súper legible.\n3. Ensaya frente al espejo modular tu voz con entonación de oratoria profesional para transmitir pasión e importancia.\n4. Puedes grabar un breve audio recitándolo, o subir la foto de tu libreta con la frase y un dibujo de la máscara del teatro clásico griego.' },
+          { id: 'task_art_3_hard', title: 'Producción Audiovisual', description: 'Escribe un guion técnico cinematográfico.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: '1. Escribe el guion o "storyboard" técnico para un cortometraje original de 3 minutos de duración.\n2. En tu libreta dibuja una tabla de 3 columnas:\n   - Escena/Toma (ej. Escena 1, Toma abierta)\n   - Imagen (¿Qué se ve en cámara? ej. Un parque vacío)\n   - Audio/Diálogo (¿Qué ruidos se escuchan o qué dicen los personajes?)\n3. Rellena al menos 5 tomas diferentes para contar una historia con principio, nudo y desenlace.\n4. Tómale una foto de frente y con nitidez.' }
         ]
       }]
     },
@@ -393,8 +393,8 @@ export const ACADEMIC_CONTENT: Record<Year, SubjectTopics[]> = {
         name: 'Transversalidad',
         tasks: [
           { id: 'task_int_cur_3_basic', title: 'Reto Integrador', description: 'Propón una solución que use 2 materias.', difficulty: 'Easy', type: 'Quiz', isAIQuiz: true, reward: { tokens: 25 } },
-          { id: 'task_int_cur_3_inter', title: 'Proyecto de Vida', description: 'Mapa mental de tus metas escolares.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 } },
-          { id: 'task_int_cur_3_hard', title: 'Feria de Ciencias', description: 'Presenta un experimento integral.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true } }
+          { id: 'task_int_cur_3_inter', title: 'Proyecto de Vida', description: 'Mapa mental de tus metas escolares.', difficulty: 'Medium', type: 'Exercise', evidenceRequired: true, reward: { tokens: 50 }, instructions: '1. Elabora un plan de acción formal de 3 pasos en tu libreta para el paso de secundaria a preparatoria.\n2. Enumera:\n   - Paso 1: ¿Qué preparatorias o bachilleratos te gustaría investigar?\n   - Paso 2: ¿Cuáles temas académicos consideras que debes repasar con mayor dedicación?\n   - Paso 3: ¿Qué hábitos personales (ej. organización, horario de sueño) necesitas afianzar?\n3. Firma tu plan, tómale foto y súbela.' },
+          { id: 'task_int_cur_3_hard', title: 'Feria de Ciencias', description: 'Presenta un experimento integral.', difficulty: 'Hard', type: 'Exercise', evidenceRequired: true, reward: { tokens: 150, pack: true }, instructions: '1. Realiza una investigación aplicada sobre un contaminante cotidiano en tu comunidad (ej. pilas alcalinas gastadas, bolsas plásticas desechadas o el humo de camiones).\n2. En una página de tu cuaderno, plasma un informe estructurado que contenga:\n   - Título formal\n   - Planteamiento: ¿Por qué es dañino para el ecosistema?\n   - Hipótesis: ¿Cuál es la mejor solución ecológica o reciclado alternativo?\n   - Propuesta práctica para concientizar a tus compañeros de la Jacobo.\n3. Sube una foto de tu reporte firmado.' }
         ]
       }]
     }
