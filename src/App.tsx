@@ -350,6 +350,7 @@ export default function App() {
   };
 
   const [stats, setStats] = useState<UserStats>(defaultStats);
+  const lastLocalUpdateRef = useRef<number>(0);
   const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -381,10 +382,18 @@ export default function App() {
   }, [currentUserId]);
 
   useEffect(() => {
-    if (currentUserId && isNotificationsOpen) {
+    if (!currentUserId || !isAuthenticated) return;
+
+    // Load immediately
+    loadNotifications();
+
+    // Set up interval to reload notifications every 15 seconds
+    const interval = setInterval(() => {
       loadNotifications();
-    }
-  }, [currentUserId, isNotificationsOpen, loadNotifications]);
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [currentUserId, isAuthenticated, loadNotifications]);
 
   const [teachers, setTeachers] = useState<TeacherModel[]>([]);
   const [globalStudents, setGlobalStudents] = useState<Student[]>([]);
@@ -1222,6 +1231,9 @@ export default function App() {
   // Save to Supabase and local storage
   useEffect(() => {
     if (currentUserId && stats.username) {
+      // Mark the last local update timestamp
+      lastLocalUpdateRef.current = Date.now();
+
       // Sync with Supabase (fire and forget for now, but in production consider debouncing)
       supabaseService
         .updateUserStats(currentUserId, stats)
@@ -1245,6 +1257,12 @@ export default function App() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.user || !isSubscribed) return;
+
+        // Skip sync if the student recently updated their local stats (allow 10 seconds to persist to db)
+        if (Date.now() - lastLocalUpdateRef.current < 10000) {
+          console.log("[Stats Sync] Skipped periodic sync to prevent clobbering recent local updates");
+          return;
+        }
         
         const fetchedStats = await supabaseService.getProfile(
           session.user.id,
@@ -1254,6 +1272,11 @@ export default function App() {
         if (!isSubscribed) return;
 
         setStats((prev) => {
+          // Double check ref within state setter
+          if (Date.now() - lastLocalUpdateRef.current < 10000) {
+            return prev;
+          }
+
           // Check if key fields have been updated by teacher (tokens, pendingTasks, completedTasks, packCurrencies, collection)
           const tokensChanged = fetchedStats.tokens !== prev.tokens;
           const streakChanged = fetchedStats.streak !== prev.streak;
@@ -1495,32 +1518,52 @@ export default function App() {
     });
   };
 
-  const submitTaskForReview = (task: Task, evidenceUrl?: string) => {
+  const submitTaskForReview = async (task: Task, evidenceUrl?: string) => {
+    // Record direct interaction time to skip sync race condition
+    lastLocalUpdateRef.current = Date.now();
+
     setStats((prev) => {
-      const newStats = { ...prev };
-      if (!newStats.pendingTasks) {
-        newStats.pendingTasks = [];
-      }
-      if (
-        !newStats.pendingTasks.includes(task.id) &&
-        !newStats.completedTasks.includes(task.id)
-      ) {
-        newStats.pendingTasks = [...newStats.pendingTasks, task.id];
-      }
+      const pendingTasks = prev.pendingTasks || [];
+      const updatedPendingTasks = (pendingTasks.includes(task.id) || (prev.completedTasks || []).includes(task.id))
+        ? pendingTasks
+        : [...pendingTasks, task.id];
+
+      // Clone packCurrencies and its nested _task_evidences safely
+      const packCurrencies = prev.packCurrencies
+        ? { ...prev.packCurrencies }
+        : { pack_jacobo: 0, pack_culiacan: 0, pack_six_seven: 0 };
+
       if (evidenceUrl) {
-        if (!newStats.packCurrencies) {
-          newStats.packCurrencies = { pack_jacobo: 0, pack_culiacan: 0, pack_six_seven: 0 };
-        }
-        if (!newStats.packCurrencies._task_evidences) {
-          newStats.packCurrencies._task_evidences = {};
-        }
-        newStats.packCurrencies._task_evidences = {
-          ...newStats.packCurrencies._task_evidences,
-          [task.id]: evidenceUrl,
-        };
+        const _task_evidences = packCurrencies._task_evidences
+          ? { ...packCurrencies._task_evidences }
+          : {};
+        _task_evidences[task.id] = evidenceUrl;
+        packCurrencies._task_evidences = _task_evidences;
       }
-      return newStats;
+
+      return {
+        ...prev,
+        pendingTasks: updatedPendingTasks,
+        packCurrencies,
+      };
     });
+
+    try {
+      const studentName = stats.username || "Un estudiante";
+      const studentGrade = stats.grade || "S/G";
+      const hasEvidenceText = evidenceUrl ? " con evidencia adjunta" : "";
+
+      await supabaseService.notifyTeachersAndAdminsForStudent(
+        currentUserId,
+        studentName,
+        studentGrade,
+        "📤 Nueva Evidencia Entregada",
+        `El alumno ${studentName} (${studentGrade}) ha enviado la tarea "${task.title}"${hasEvidenceText} para tu revisión.`,
+        "info"
+      );
+    } catch (err) {
+      console.error("Error sending submission notification to teachers:", err);
+    }
   };
 
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);

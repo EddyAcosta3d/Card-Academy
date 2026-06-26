@@ -773,5 +773,73 @@ export const supabaseService = {
     } catch (e) {
       console.error('[Supabase] Error notifying admins:', e);
     }
+  },
+
+  async notifyTeachersAndAdminsForStudent(
+    studentId: string,
+    studentName: string,
+    studentGrade: string,
+    title: string,
+    message: string,
+    type: 'info' | 'success' | 'warning' | 'error' = 'info'
+  ) {
+    try {
+      // Find all teachers and admins
+      const { data: staff, error } = await supabase
+        .from('users')
+        .select('id, role, assigned_groups, assigned_subjects')
+        .in('role', ['Teacher', 'Admin']);
+      
+      if (error) {
+        console.error('[Supabase] Error fetching staff to notify:', error);
+        return;
+      }
+
+      if (!staff || staff.length === 0) return;
+
+      const recipientIds = new Set<string>();
+
+      staff.forEach((user: any) => {
+        if (!user.id) return;
+        
+        if (user.role === 'Admin') {
+          recipientIds.add(user.id);
+        } else if (user.role === 'Teacher') {
+          const studentGradeClean = (studentGrade || "").trim().toUpperCase();
+          const assignedGroups = (user.assigned_groups || []).map((g: string) => g.trim().toUpperCase());
+          const assignedSubjects = user.assigned_subjects || [];
+          
+          const isResponsible = 
+            assignedGroups.includes(studentGradeClean) ||
+            assignedSubjects.some((sub: string) => {
+              // sub could be in form "subject_id:grade"
+              const parts = sub.split(":");
+              const subGrade = (parts[1] || "").trim().toUpperCase();
+              return subGrade === studentGradeClean;
+            });
+          
+          if (isResponsible) {
+            recipientIds.add(user.id);
+          }
+        }
+      });
+
+      // If no specific teacher is assigned to this group, fallback to all staff members
+      if (recipientIds.size === 0) {
+        staff.forEach((user: any) => {
+          if (user.id) recipientIds.add(user.id);
+        });
+      }
+
+      // Send the notification to all matched recipients
+      const promises = Array.from(recipientIds).map(recipientId =>
+        this.sendNotification(recipientId, title, message, type)
+      );
+      
+      await Promise.all(promises);
+      console.log(`[Supabase] Sent notification to ${recipientIds.size} staff members about student submission.`);
+    } catch (e) {
+      console.error('[Supabase] Error in notifyTeachersAndAdminsForStudent:', e);
+    }
   }
 };

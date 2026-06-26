@@ -410,9 +410,22 @@ export const AdminDashboardPendientes: React.FC<AdminDashboardPendientesProps> =
                           <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest block">
                             Evidencia de Entrega
                           </span>
-                          <div className="text-[11px] text-slate-300 leading-relaxed font-semibold italic bg-slate-950 border border-slate-850 p-3.5 rounded-2xl border-l-[3px] border-l-indigo-500 text-left">
-                            "Desafío completado. Respuestas subidas y justificadas de acuerdo a las indicaciones. Solicitud enviada para revisión."
-                          </div>
+                          {student.packCurrencies?._task_evidences?.[taskId] ? (
+                            <div className="space-y-2">
+                              <div className="relative border border-slate-800 bg-slate-950 p-2 rounded-2xl overflow-hidden group max-w-full flex justify-center">
+                                <img
+                                  src={student.packCurrencies._task_evidences[taskId]}
+                                  alt="Evidencia enviada"
+                                  className="max-h-48 w-auto object-contain rounded-xl"
+                                  referrerPolicy="no-referrer"
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="text-[11px] text-slate-300 leading-relaxed font-semibold italic bg-slate-950 border border-slate-850 p-3.5 rounded-2xl border-l-[3px] border-l-indigo-500 text-left">
+                              "Desafío completado. Respuestas subidas y justificadas de acuerdo a las indicaciones. Solicitud enviada para revisión."
+                            </div>
+                          )}
                         </div>
                       </div>
 
