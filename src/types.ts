@@ -61,7 +61,7 @@ export interface PackCurrencies {
   pack_jacobo: number;
   pack_culiacan: number;
   pack_six_seven: number;
-  [key: string]: number;
+  [key: string]: any;
 }
 
 export interface UserStats {

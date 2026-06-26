@@ -23,6 +23,7 @@ import {
   GraduationCap,
   ArrowLeft,
   FileUp,
+  Download,
   CheckCircle2,
   Lock,
   Zap,
@@ -106,7 +107,7 @@ import {
   SCHOOL_GROUPS,
   INITIAL_PACKS,
 } from "./constants";
-import { cn } from "./lib/utils";
+import { cn, compressImage, downloadBase64File } from "./lib/utils";
 import { playCoinSound } from "./lib/sounds";
 import { Toaster, toast } from "sonner";
 import { supabase } from "./lib/supabase";
@@ -1234,6 +1235,77 @@ export default function App() {
     }
   }, [stats, currentUserId, currentUser]);
 
+  // Periodic sync of student's profile from Supabase to prevent clobbering teacher approvals
+  useEffect(() => {
+    if (!currentUserId || stats.role !== "Student" || !isAuthenticated) return;
+
+    let isSubscribed = true;
+
+    const syncStudentProfile = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user || !isSubscribed) return;
+        
+        const fetchedStats = await supabaseService.getProfile(
+          session.user.id,
+          session.user.user_metadata,
+        );
+
+        if (!isSubscribed) return;
+
+        setStats((prev) => {
+          // Check if key fields have been updated by teacher (tokens, pendingTasks, completedTasks, packCurrencies, collection)
+          const tokensChanged = fetchedStats.tokens !== prev.tokens;
+          const streakChanged = fetchedStats.streak !== prev.streak;
+          const pendingChanged = JSON.stringify(fetchedStats.pendingTasks) !== JSON.stringify(prev.pendingTasks);
+          const completedChanged = JSON.stringify(fetchedStats.completedTasks) !== JSON.stringify(prev.completedTasks);
+          const collectionChanged = JSON.stringify(fetchedStats.collection) !== JSON.stringify(prev.collection);
+          
+          // Check nested evidences safely
+          const prevEvidences = prev.packCurrencies?._task_evidences || {};
+          const fetchedEvidences = fetchedStats.packCurrencies?._task_evidences || {};
+          const evidencesChanged = JSON.stringify(prevEvidences) !== JSON.stringify(fetchedEvidences);
+
+          if (tokensChanged || streakChanged || pendingChanged || completedChanged || collectionChanged || evidencesChanged) {
+            console.log("[Stats Sync] Merging updated student profile from database (Teacher review or reward detected!)");
+            return {
+              ...prev,
+              tokens: fetchedStats.tokens,
+              streak: fetchedStats.streak,
+              pendingTasks: fetchedStats.pendingTasks,
+              completedTasks: fetchedStats.completedTasks,
+              collection: fetchedStats.collection,
+              packCurrencies: fetchedStats.packCurrencies,
+              dailyLimits: fetchedStats.dailyLimits || prev.dailyLimits,
+            };
+          }
+          return prev;
+        });
+      } catch (err) {
+        console.error("Error in periodic stats sync:", err);
+      }
+    };
+
+    // Run every 12 seconds
+    const interval = setInterval(syncStudentProfile, 12000);
+    return () => {
+      isSubscribed = false;
+      clearInterval(interval);
+    };
+  }, [currentUserId, stats.role, isAuthenticated]);
+
+  // Periodic sync of user list for teachers and admins to see new submissions automatically
+  useEffect(() => {
+    if (!isAuthenticated || (stats.role !== "Admin" && stats.role !== "Teacher")) return;
+
+    const interval = setInterval(() => {
+      console.log("[Users Sync] Periodically reloading student list for teacher/admin dashboard");
+      loadUsers();
+    }, 15000); // Reload every 15 seconds
+
+    return () => clearInterval(interval);
+  }, [isAuthenticated, stats.role, loadUsers]);
+
   const handleLogin = (
     role: UserRole,
     username: string,
@@ -1423,7 +1495,7 @@ export default function App() {
     });
   };
 
-  const submitTaskForReview = (task: Task) => {
+  const submitTaskForReview = (task: Task, evidenceUrl?: string) => {
     setStats((prev) => {
       const newStats = { ...prev };
       if (!newStats.pendingTasks) {
@@ -1434,6 +1506,18 @@ export default function App() {
         !newStats.completedTasks.includes(task.id)
       ) {
         newStats.pendingTasks = [...newStats.pendingTasks, task.id];
+      }
+      if (evidenceUrl) {
+        if (!newStats.packCurrencies) {
+          newStats.packCurrencies = { pack_jacobo: 0, pack_culiacan: 0, pack_six_seven: 0 };
+        }
+        if (!newStats.packCurrencies._task_evidences) {
+          newStats.packCurrencies._task_evidences = {};
+        }
+        newStats.packCurrencies._task_evidences = {
+          ...newStats.packCurrencies._task_evidences,
+          [task.id]: evidenceUrl,
+        };
       }
       return newStats;
     });
@@ -3142,20 +3226,40 @@ export default function App() {
                                                           "input",
                                                         );
                                                       input.type = "file";
-                                                      input.onchange = (
+                                                      input.accept = "image/*";
+                                                      input.onchange = async (
                                                         e: any,
                                                       ) => {
                                                         if (
-                                                          e.target.files
-                                                            .length > 0
+                                                          e.target.files &&
+                                                          e.target.files.length > 0
                                                         ) {
-                                                          toast.success(
-                                                            "Evidencia subida correctamente. El profesor validará tu desafío.",
-                                                          );
-                                                          submitTaskForReview(
-                                                            task,
-                                                          );
-                                                          setSelectedTask(null);
+                                                          const file = e.target.files[0];
+                                                          const loadingToast = toast.loading("Procesando y comprimiendo evidencia...");
+                                                          try {
+                                                            let evidenceUrl = "";
+                                                            if (file.type.startsWith("image/")) {
+                                                              evidenceUrl = await compressImage(file);
+                                                            } else {
+                                                              evidenceUrl = await new Promise<string>((resolve, reject) => {
+                                                                const reader = new FileReader();
+                                                                reader.onload = () => resolve(reader.result as string);
+                                                                reader.onerror = reject;
+                                                                reader.readAsDataURL(file);
+                                                              });
+                                                            }
+                                                            toast.dismiss(loadingToast);
+                                                            toast.success("¡Evidencia procesada correctamente! El profesor la validará.");
+                                                            submitTaskForReview(
+                                                              task,
+                                                              evidenceUrl,
+                                                            );
+                                                            setSelectedTask(null);
+                                                          } catch (err) {
+                                                            toast.dismiss(loadingToast);
+                                                            toast.error("Error al procesar la evidencia. Inténtalo de nuevo.");
+                                                            console.error(err);
+                                                          }
                                                         }
                                                       };
                                                       input.click();
@@ -4258,6 +4362,10 @@ export default function App() {
                             reviewInboxItems[0] ||
                             null;
 
+                          const evidenceUrl = activeReviewItem
+                            ? activeReviewItem.student.packCurrencies?._task_evidences?.[activeReviewItem.taskId]
+                            : null;
+
                           return (
                             <div className="space-y-6 md:space-y-8">
                               {/* HEADER AREA */}
@@ -4498,6 +4606,53 @@ export default function App() {
                                                   </div>
                                                 </div>
                                               </div>
+
+                                              {/* Rendering visual evidence under submission block */}
+                                              {evidenceUrl ? (
+                                                <div className="bg-slate-900/40 p-5 rounded-3xl border border-slate-800/60 space-y-3">
+                                                  <span className="text-[8px] font-black text-cyan-400 tracking-widest uppercase block mb-1">
+                                                    Evidencia Visual del Alumno
+                                                  </span>
+                                                  <div className="relative border border-slate-800 bg-slate-950 p-2 rounded-2xl overflow-hidden group max-w-full flex justify-center">
+                                                    <img
+                                                      src={evidenceUrl}
+                                                      alt="Evidencia enviada"
+                                                      className="max-h-96 w-auto object-contain rounded-xl"
+                                                      referrerPolicy="no-referrer"
+                                                    />
+                                                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                                      <button
+                                                        onClick={() =>
+                                                          downloadBase64File(
+                                                            evidenceUrl,
+                                                            `evidencia_${activeReviewItem.student.name}_${activeReviewItem.taskId}.jpg`,
+                                                          )
+                                                        }
+                                                        className="px-3 py-1.5 bg-slate-900/90 text-cyan-400 hover:text-white rounded-xl border border-slate-700/50 shadow-md flex items-center gap-1 text-[10px] font-bold cursor-pointer transition-colors"
+                                                      >
+                                                        <Download size={11} /> Descargar
+                                                      </button>
+                                                    </div>
+                                                  </div>
+                                                  <div className="flex justify-end">
+                                                    <button
+                                                      onClick={() =>
+                                                        downloadBase64File(
+                                                          evidenceUrl,
+                                                          `evidencia_${activeReviewItem.student.name}_${activeReviewItem.taskId}.jpg`,
+                                                        )
+                                                      }
+                                                      className="px-4 py-2 bg-slate-900 hover:bg-slate-850 text-cyan-400 hover:text-cyan-300 rounded-xl border border-slate-800 text-[10px] font-bold tracking-wider uppercase flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                                                    >
+                                                      <Download size={14} /> Descargar Evidencia
+                                                    </button>
+                                                  </div>
+                                                </div>
+                                              ) : (
+                                                <div className="bg-slate-900/20 p-4 rounded-3xl border border-slate-800/40 text-center text-[10px] text-slate-500 italic">
+                                                  ⚠️ No se subió evidencia visual o se utilizó un método alternativo.
+                                                </div>
+                                              )}
 
                                               {/* Feedback Comment input */}
                                               <div className="space-y-1.5 text-left">

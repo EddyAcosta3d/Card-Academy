@@ -11,7 +11,8 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  app.use(express.json({ limit: "50mb" }));
+  app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
   // Initialize GoogleGenAI
   const ai = new GoogleGenAI({
@@ -180,6 +181,69 @@ async function startServer() {
       res.status(201).json({ user: authData.user });
     } catch (err: any) {
       console.error("[Admin API] Error creando usuario:", err);
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // API Route: Update User Stats (Bypasses RLS using Admin Client)
+  app.put("/api/users/:userId/stats", async (req, res) => {
+    const { userId } = req.params;
+    const stats = req.body;
+
+    try {
+      if (!supabaseServiceKey || supabaseServiceKey === "YOUR_SUPABASE_SERVICE_ROLE_KEY" || supabaseServiceKey === "") {
+        return res.status(500).json({ error: "La SUPABASE_SERVICE_ROLE_KEY no está configurada." });
+      }
+
+      const updateData: any = {};
+      if (stats.username !== undefined) updateData.username = stats.username.trim().toUpperCase();
+      if (stats.role !== undefined) updateData.role = stats.role;
+      if (stats.grade !== undefined) updateData.grade = stats.grade;
+      if (stats.tokens !== undefined) updateData.tokens = stats.tokens;
+      if (stats.streak !== undefined) updateData.streak = stats.streak;
+      if (stats.assignedSubjects !== undefined) updateData.assigned_subjects = stats.assignedSubjects;
+      if (stats.assignedGroups !== undefined) updateData.assigned_groups = stats.assignedGroups;
+      if (stats.completedTasks !== undefined) updateData.completed_tasks = stats.completedTasks;
+      if (stats.pendingTasks !== undefined) updateData.pending_tasks = stats.pendingTasks;
+      if (stats.unstickedCards !== undefined) updateData.unsticked_cards = stats.unstickedCards;
+      if (stats.packCurrencies !== undefined) updateData.pack_currencies = stats.packCurrencies;
+      if (stats.dailyLimits !== undefined) updateData.daily_limits = stats.dailyLimits;
+      if (stats.lastActive !== undefined) updateData.last_active = stats.lastActive;
+
+      if (Object.keys(updateData).length > 0) {
+        const { error } = await supabaseAdmin
+          .from('users')
+          .update(updateData)
+          .eq('id', userId);
+
+        if (error) {
+          console.error("[Stats API] Error actualizando 'users' table:", error);
+          throw error;
+        }
+      }
+
+      // Sync collection if provided
+      if (stats.collection !== undefined) {
+        const cardInserts = stats.collection.map((cardId: string) => ({
+          user_id: userId,
+          card_id: cardId
+        }));
+
+        if (cardInserts.length > 0) {
+          const { error: cardsError } = await supabaseAdmin
+            .from('user_cards')
+            .upsert(cardInserts, { onConflict: 'user_id,card_id' });
+          
+          if (cardsError) {
+            console.error("[Stats API] Error actualizando 'user_cards' table:", cardsError);
+            throw cardsError;
+          }
+        }
+      }
+
+      res.json({ success: true, message: "Estadísticas actualizadas correctamente." });
+    } catch (err: any) {
+      console.error("[Stats API] Error actualizando estadísticas:", err);
       res.status(400).json({ error: err.message });
     }
   });

@@ -421,6 +421,26 @@ export const supabaseService = {
   },
 
   async updateUserStats(userId: string, stats: Partial<UserStats>) {
+    // Attempt server-side update first to bypass any client-side RLS policies
+    try {
+      const response = await fetch(`/api/users/${userId}/stats`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(stats),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          return;
+        }
+      }
+      console.warn("[SupabaseService] Server stats update failed. Falling back to direct database client update.");
+    } catch (err) {
+      console.warn("[SupabaseService] Server stats update endpoint error. Falling back to direct database client update.", err);
+    }
+
     const updateData: any = {};
     if (stats.username !== undefined) updateData.username = stats.username.trim().toUpperCase();
     if (stats.role !== undefined) updateData.role = stats.role;

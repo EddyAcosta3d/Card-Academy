@@ -282,7 +282,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, masterTeacherKey,
         <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10" />
       </div>
 
-      <div className="w-full max-w-md flex flex-col gap-2 relative z-10 my-auto">
+      <div className="w-full max-w-md flex flex-col gap-4 relative z-10 py-4 sm:my-auto">
         {/* Top: Branding */}
         <div className="space-y-1 flex flex-col items-center text-center shrink-0">
           <motion.div 
@@ -310,13 +310,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, masterTeacherKey,
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.3 }}
           className={cn(
-            "backdrop-blur-xl rounded-[1.5rem] p-4 lg:p-6 shadow-2xl relative w-full transition-all duration-500 sm:max-h-[85dvh] h-auto flex flex-col shrink-0",
+            "backdrop-blur-xl rounded-[1.5rem] p-5 lg:p-6 shadow-2xl relative w-full transition-all duration-500 sm:max-h-[85dvh] h-auto flex flex-col shrink-0",
             isSignupMode 
               ? "bg-slate-800/80 border border-indigo-500/30 shadow-indigo-500/10" 
               : "bg-slate-900/50 border border-slate-800"
           )}
         >
-          <div className="relative z-10 space-y-3 lg:space-y-4 flex flex-col sm:h-full sm:overflow-hidden">
+          <div className="relative z-10 space-y-3 lg:space-y-4 flex flex-col h-full overflow-hidden">
             <div className="text-center space-y-2 shrink-0">
               <p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em]">
                 {isForgotPasswordMode ? 'Restablecer Contraseña' : isSignupMode ? 'Crea tu nueva cuenta' : 'Ingresa a tu cuenta'}
@@ -373,7 +373,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLogin, masterTeacherKey,
               </div>
             )}
 
-            <div className="space-y-3 lg:space-y-4 sm:overflow-y-auto no-scrollbar px-1 flex-shrink-0 sm:flex-1">
+            <div className="space-y-3 lg:space-y-4 overflow-y-auto no-scrollbar px-1 flex-shrink-0 flex-1">
               {isForgotPasswordMode ? (
                 <div className="space-y-3 lg:space-y-4">
                   <p className="text-[11px] text-slate-400 leading-relaxed text-center font-semibold bg-slate-950/40 p-3 rounded-xl border border-slate-800/40">
