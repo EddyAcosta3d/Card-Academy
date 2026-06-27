@@ -457,10 +457,11 @@ export const supabaseService = {
     if (stats.lastActive !== undefined && isLastActiveColumnPresent) updateData.last_active = stats.lastActive;
 
     if (Object.keys(updateData).length > 0) {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('users')
         .update(updateData)
-        .eq('id', userId);
+        .eq('id', userId)
+        .select('id');
 
       if (error) {
         if (error.message.includes('column') && error.message.includes('last_active')) {
@@ -468,11 +469,23 @@ export const supabaseService = {
            // Retry without problematic column
            delete updateData.last_active;
            if (Object.keys(updateData).length > 0) {
-             await supabase.from('users').update(updateData).eq('id', userId);
+             const retryRes = await supabase
+               .from('users')
+               .update(updateData)
+               .eq('id', userId)
+               .select('id');
+             if (!retryRes.error && (!retryRes.data || retryRes.data.length === 0)) {
+               throw new Error("No tienes permisos suficientes en Supabase (RLS) para actualizar la información de este alumno. Como Profesor/Admin, necesitas configurar la política en el SQL Editor. Revisa el archivo SUPABASE_SCHEMA.md para ver la solución.");
+             }
+             if (retryRes.error) {
+               throw retryRes.error;
+             }
            }
         } else {
           throw error;
         }
+      } else if (!data || data.length === 0) {
+        throw new Error("No tienes permisos suficientes en Supabase (RLS) para actualizar la información de este alumno. Como Profesor/Admin, necesitas configurar la política en el SQL Editor. Revisa el archivo SUPABASE_SCHEMA.md para ver la solución.");
       }
     }
 

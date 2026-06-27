@@ -109,3 +109,34 @@ create policy "Usuarios actualizan sus notificaciones" on notifications
 ### Notas importantes:
 1. **assigned_groups**: Es vital que esta columna sea de tipo `text[]` (array de texto).
 2. **username**: Si ya tienes datos, asegúrate de que cada usuario tenga un valor en `username` antes de intentar habitilitarlo como `unique`.
+
+---
+
+## ⚡ RESOLUCIÓN DE PROBLEMAS: Aprobar/Rechazar en Netlify u otras plataformas estáticas (Error de RLS)
+
+Al ejecutar la aplicación en **Netlify** o como una SPA pura en el navegador (sin el servidor de proxy Node.js), la aplicación interactúa directamente con Supabase desde el cliente.
+
+Por defecto, las políticas de seguridad (RLS) impiden que un usuario con rol de **Profesor** o **Admin** modifique los datos de otro alumno de forma directa desde la base de datos (por ejemplo, para quitarle el desafío pendiente, sumarle medallas o asignarle una carta al aprobar o rechazar su evidencia).
+
+Para solucionar esto, copia y ejecuta el siguiente script SQL en el **SQL Editor** de tu panel de Supabase:
+
+```sql
+-- 1. Permitir que Profesores y Admins actualicen la información de perfiles de otros alumnos
+create policy "Profesores y admins pueden actualizar perfiles de alumnos" 
+on users 
+for update 
+using (
+  (auth.jwt() -> 'user_metadata' ->> 'role') in ('Teacher', 'Admin')
+);
+
+-- 2. Permitir que Profesores y Admins gestionen las cartas de los alumnos (user_cards)
+create policy "Profesores y admins gestionan cartas de alumnos" 
+on user_cards 
+for all 
+using (
+  (auth.jwt() -> 'user_metadata' ->> 'role') in ('Teacher', 'Admin')
+);
+```
+
+*Nota: Una vez que ejecutes estas dos políticas en tu editor de Supabase, la aprobación y desaprobación de evidencias de los desafíos se sincronizará y resolverá al instante desde Netlify de forma idéntica a como lo hace en el entorno local.*
+
