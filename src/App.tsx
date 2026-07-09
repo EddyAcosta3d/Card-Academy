@@ -967,6 +967,31 @@ export default function App() {
     return Array.from(map.values());
   }, [globalStudents, currentUser, stats.username]);
 
+  const adjustStudentTokens = async (student: Student, amount: number) => {
+    if (!student.id) return;
+    const newTokens = Math.max(0, student.tokens + amount);
+    try {
+      await supabaseService.updateUserStats(student.id, { tokens: newTokens });
+      await supabaseService.sendNotification(
+        student.id,
+        amount > 0 ? "🪙 ¡Fichas Recibidas!" : "🪙 Ajuste de Saldo",
+        amount > 0
+          ? `El Administrador te ha otorgado +${amount} medallas.`
+          : `El Administrador ha retirado ${Math.abs(amount)} medallas de tu saldo.`,
+        amount > 0 ? "success" : "info"
+      );
+      await loadUsers();
+      toast.success(
+        amount > 0
+          ? `Se otorgaron +${amount} puntos a ${student.username}.`
+          : `Se retiraron ${Math.abs(amount)} puntos a ${student.username}.`
+      );
+    } catch (e) {
+      console.error("Error adjusting student tokens:", e);
+      toast.error("Error al actualizar los puntos.");
+    }
+  };
+
   const [selectedAdminCard, setSelectedAdminCard] = useState<CardType | null>(
     null,
   );
@@ -3968,12 +3993,60 @@ export default function App() {
                                         <td className="px-8 py-6 text-sm text-indigo-400 font-bold uppercase">
                                           {student.grade}
                                         </td>
-                                        <td className="px-8 py-6 text-sm text-amber-500 font-black flex items-center gap-1.5">
-                                          <Coins
-                                            size={14}
-                                            className="text-amber-500"
-                                          />{" "}
-                                          {student.tokens}
+                                        <td className="px-8 py-6 text-sm text-amber-500 font-black">
+                                          <div className="flex items-center gap-4">
+                                            <div className="flex items-center gap-1.5 shrink-0">
+                                              <Coins
+                                                size={14}
+                                                className="text-amber-500"
+                                              />{" "}
+                                              <span>{student.tokens}</span>
+                                            </div>
+                                            <div className="flex items-center gap-1 bg-slate-950/40 p-1 rounded-xl border border-slate-800">
+                                              <button
+                                                onClick={() => adjustStudentTokens(student, -50)}
+                                                className="w-7 h-7 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 flex items-center justify-center font-black text-[10px] transition-all active:scale-90"
+                                                title="Quitar 50 puntos"
+                                              >
+                                                -50
+                                              </button>
+                                              <button
+                                                onClick={() => adjustStudentTokens(student, -10)}
+                                                className="w-7 h-7 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 flex items-center justify-center font-black text-[10px] transition-all active:scale-90"
+                                                title="Quitar 10 puntos"
+                                              >
+                                                -10
+                                              </button>
+                                              <button
+                                                onClick={() => adjustStudentTokens(student, 10)}
+                                                className="w-7 h-7 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 flex items-center justify-center font-black text-[10px] transition-all active:scale-90"
+                                                title="Dar 10 puntos"
+                                              >
+                                                +10
+                                              </button>
+                                              <button
+                                                onClick={() => adjustStudentTokens(student, 50)}
+                                                className="w-7 h-7 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 flex items-center justify-center font-black text-[10px] transition-all active:scale-90"
+                                                title="Dar 50 puntos"
+                                              >
+                                                +50
+                                              </button>
+                                              <button
+                                                onClick={() => {
+                                                  const custom = prompt(
+                                                    `Ajustar puntos de ${student.username}:\nIngresa la cantidad a sumar (ej. 200) o restar (ej. -200):`,
+                                                  );
+                                                  if (custom !== null && !isNaN(parseInt(custom))) {
+                                                    adjustStudentTokens(student, parseInt(custom));
+                                                  }
+                                                }}
+                                                className="px-2 h-7 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 flex items-center justify-center font-black text-[8px] uppercase tracking-wider transition-all active:scale-90"
+                                                title="Ajuste personalizado"
+                                              >
+                                                Otro
+                                              </button>
+                                            </div>
+                                          </div>
                                         </td>
                                         <td className="px-8 py-6 text-right">
                                           <div className="flex items-center justify-end gap-2">
@@ -4139,21 +4212,23 @@ export default function App() {
                                         </div>
                                       </div>
 
-                                      <div className="flex items-center justify-between bg-slate-950/30 p-4 rounded-2xl border border-slate-800/50">
-                                        <div className="flex items-center gap-3">
-                                          <div className="p-2 bg-amber-500/10 rounded-xl">
-                                            <Coins
-                                              size={18}
-                                              className="text-amber-500"
-                                            />
-                                          </div>
-                                          <div>
-                                            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">
-                                              Tokens
-                                            </p>
-                                            <p className="text-lg text-amber-500 font-black leading-none">
-                                              {student.tokens}
-                                            </p>
+                                      <div className="flex flex-col gap-3 bg-slate-950/30 p-4 rounded-2xl border border-slate-800/50">
+                                        <div className="flex items-center justify-between w-full">
+                                          <div className="flex items-center gap-3">
+                                            <div className="p-2 bg-amber-500/10 rounded-xl">
+                                              <Coins
+                                                size={18}
+                                                className="text-amber-500"
+                                              />
+                                            </div>
+                                            <div>
+                                              <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">
+                                                Tokens
+                                              </p>
+                                              <p className="text-lg text-amber-500 font-black leading-none">
+                                                {student.tokens}
+                                              </p>
+                                            </div>
                                           </div>
                                           <div className="flex items-center gap-2">
                                             <button
@@ -4262,6 +4337,51 @@ export default function App() {
                                               <Trash2 size={18} />
                                             </button>
                                           </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-1.5 w-full bg-slate-900/60 p-1.5 rounded-xl border border-slate-800/80 justify-center">
+                                          <button
+                                            onClick={() => adjustStudentTokens(student, -50)}
+                                            className="flex-1 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 flex items-center justify-center font-black text-xs transition-all active:scale-95"
+                                            title="Quitar 50 puntos"
+                                          >
+                                            -50
+                                          </button>
+                                          <button
+                                            onClick={() => adjustStudentTokens(student, -10)}
+                                            className="flex-1 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 flex items-center justify-center font-black text-xs transition-all active:scale-95"
+                                            title="Quitar 10 puntos"
+                                          >
+                                            -10
+                                          </button>
+                                          <button
+                                            onClick={() => adjustStudentTokens(student, 10)}
+                                            className="flex-1 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 flex items-center justify-center font-black text-xs transition-all active:scale-95"
+                                            title="Dar 10 puntos"
+                                          >
+                                            +10
+                                          </button>
+                                          <button
+                                            onClick={() => adjustStudentTokens(student, 50)}
+                                            className="flex-1 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 flex items-center justify-center font-black text-xs transition-all active:scale-95"
+                                            title="Dar 50 puntos"
+                                          >
+                                            +50
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              const custom = prompt(
+                                                `Ajustar puntos de ${student.username}:\nIngresa la cantidad a sumar (ej. 200) o restar (ej. -200):`,
+                                              );
+                                              if (custom !== null && !isNaN(parseInt(custom))) {
+                                                adjustStudentTokens(student, parseInt(custom));
+                                              }
+                                            }}
+                                            className="px-3 py-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 flex items-center justify-center font-black text-[10px] uppercase tracking-wider transition-all active:scale-95"
+                                            title="Ajuste personalizado"
+                                          >
+                                            Otro
+                                          </button>
                                         </div>
                                       </div>
                                     </div>
